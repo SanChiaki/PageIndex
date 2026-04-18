@@ -7,6 +7,15 @@ function open(dbPath: string) {
   return db;
 }
 
+function parseCitations(citationsJson: string) {
+  try {
+    const parsed = JSON.parse(citationsJson);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 export function createConversation(dbPath: string, ownerUserId: string) {
   const db = open(dbPath);
   const now = new Date().toISOString();
@@ -243,7 +252,7 @@ export function getConversationDetail(
       id: row.id,
       role: row.role,
       content: row.content,
-      citations: JSON.parse(row.citations_json),
+      citations: parseCitations(row.citations_json),
       createdAt: row.created_at,
     })),
   };

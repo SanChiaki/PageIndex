@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import { migrateDatabase } from "@/lib/db/migrate";
 import { createProject } from "@/lib/repos/project-store";
@@ -78,5 +79,32 @@ describe("conversation store", () => {
       ownConversation.id,
     );
     expect(getConversationById(dbPath, otherConversation.id, "user_demo")).toBeNull();
+  });
+
+  it("falls back to an empty citation list when stored citations are invalid JSON", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-conv-citations-"));
+    tempDirs.push(dir);
+    const dbPath = path.join(dir, "app.db");
+    migrateDatabase(dbPath);
+
+    const conversation = createConversation(dbPath, "user_demo");
+    appendConversationMessage(dbPath, {
+      conversationId: conversation.id,
+      role: "assistant",
+      content: "Answer",
+      citations: [],
+    });
+
+    const db = new Database(dbPath);
+    db.prepare(`UPDATE conversation_messages SET citations_json = ? WHERE conversation_id = ?`).run(
+      "{invalid-json",
+      conversation.id,
+    );
+    db.close();
+
+    const detail = getConversationDetail(dbPath, conversation.id);
+
+    expect(detail.messages).toHaveLength(1);
+    expect(detail.messages[0]?.citations).toEqual([]);
   });
 });

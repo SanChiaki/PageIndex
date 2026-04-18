@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ProjectScopePicker } from "@/components/project-scope-picker";
 
 type ConversationCreateResponse = { id: string };
+const SEND_ERROR_MESSAGE = "Unable to send message. Please try again.";
 
 export function ChatComposer({
   availableProjects,
@@ -19,6 +20,7 @@ export function ChatComposer({
   const [message, setMessage] = useState("");
   const [activeProjectIds, setActiveProjectIds] = useState(selectedProjectIds);
   const [sending, setSending] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
     setActiveProjectIds(selectedProjectIds);
@@ -44,6 +46,7 @@ export function ChatComposer({
     }
 
     setSending(true);
+    setErrorMessage("");
     try {
       let currentConversationId = conversationId;
 
@@ -54,12 +57,14 @@ export function ChatComposer({
           body: JSON.stringify({ projectIds: activeProjectIds }),
         });
         if (!createResponse.ok) {
+          setErrorMessage(SEND_ERROR_MESSAGE);
           return;
         }
         const created = (await createResponse.json()) as
           | ConversationCreateResponse
           | undefined;
         if (!created?.id) {
+          setErrorMessage(SEND_ERROR_MESSAGE);
           return;
         }
         currentConversationId = created.id;
@@ -75,12 +80,15 @@ export function ChatComposer({
         }),
       });
       if (!sendResponse.ok) {
+        setErrorMessage(SEND_ERROR_MESSAGE);
         return;
       }
 
       setMessage("");
       router.push(`/chat?conversationId=${currentConversationId}`);
       router.refresh();
+    } catch {
+      setErrorMessage(SEND_ERROR_MESSAGE);
     } finally {
       setSending(false);
     }
@@ -120,6 +128,9 @@ export function ChatComposer({
           {sending ? "Sending..." : "Send"}
         </button>
       </div>
+      {errorMessage ? (
+        <p className="mt-3 text-sm text-[var(--pi-danger,#fca5a5)]">{errorMessage}</p>
+      ) : null}
     </form>
   );
 }

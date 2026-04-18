@@ -2,7 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatComposer } from "@/components/chat-composer";
 import { ChatMessageList } from "@/components/chat-message-list";
@@ -100,6 +100,80 @@ describe("Chat page components", () => {
     );
     expect(routerMocks.push).toHaveBeenCalledWith("/chat?conversationId=conv_new");
     expect(routerMocks.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows an error message when sending fails", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ id: "conv_new" }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        json: async () => ({ error: "Retrieval failed" }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <ChatComposer
+        availableProjects={[{ id: "proj_1", name: "Alpha" }]}
+        selectedProjectIds={["proj_1"]}
+      />,
+    );
+
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "Summarize Alpha documents" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /send/i }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    expect(
+      screen.getByText(/unable to send message\. please try again\./i),
+    ).toBeInTheDocument();
+    expect(routerMocks.push).not.toHaveBeenCalled();
+  });
+
+  it("ignores repeated submits while a send is already in flight", async () => {
+    let resolveCreate: ((value: { ok: boolean; json: () => Promise<{ id: string }> }) => void) |
+      undefined;
+    const createPromise = new Promise<{ ok: boolean; json: () => Promise<{ id: string }> }>(
+      (resolve) => {
+        resolveCreate = resolve;
+      },
+    );
+    const fetchMock = vi.fn(() => createPromise);
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <ChatComposer
+        availableProjects={[{ id: "proj_1", name: "Alpha" }]}
+        selectedProjectIds={["proj_1"]}
+      />,
+    );
+
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "Summarize Alpha documents" },
+    });
+
+    const form = screen.getByRole("textbox").closest("form");
+    expect(form).not.toBeNull();
+
+    fireEvent.submit(form!);
+    fireEvent.submit(form!);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveCreate?.({
+        ok: true,
+        json: async () => ({ id: "conv_new" }),
+      });
+      await createPromise;
+    });
   });
 
   it("renders citation details for assistant messages", () => {

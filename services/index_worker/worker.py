@@ -11,28 +11,32 @@ def claim_next_job(db_path: str):
     with open_db(db_path) as conn:
         row = conn.execute(
             """
-            SELECT id
-              FROM jobs
-             WHERE type = 'document_index'
+            WITH next_job AS (
+              SELECT id, document_id
+                FROM jobs
+               WHERE type = 'document_index'
+                 AND status = 'queued'
+               ORDER BY created_at ASC
+               LIMIT 1
+            )
+            UPDATE jobs
+               SET status = 'running', progress = 5, updated_at = ?
+             WHERE id = (SELECT id FROM next_job)
                AND status = 'queued'
-             ORDER BY created_at ASC
-             LIMIT 1
-            """
+            RETURNING id, document_id
+            """,
+            (now,),
         ).fetchone()
         if row is None:
             return None
 
         conn.execute(
-            "UPDATE jobs SET status = 'running', progress = 5, updated_at = ? WHERE id = ?",
-            (now, row["id"]),
-        )
-        conn.execute(
             """
             UPDATE documents
                SET status = 'indexing', updated_at = ?
-             WHERE id = (SELECT document_id FROM jobs WHERE id = ?)
+             WHERE id = ?
             """,
-            (now, row["id"]),
+            (now, row["document_id"]),
         )
         return row["id"]
 

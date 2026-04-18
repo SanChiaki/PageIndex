@@ -107,51 +107,47 @@ Run these processes in separate terminals from the repository root unless noted.
 ### 1. Web app
 
 ```bash
-cd /Users/oam/Workspace/demos/PageIndexDemo/web
-pnpm install
-pnpm db:migrate
-pnpm dev
+pnpm -C web install
+pnpm -C web db:migrate
+pnpm -C web dev
 ```
 
 Optional environment overrides:
 
 ```bash
-APP_VAR_ROOT=/Users/oam/Workspace/demos/PageIndexDemo/var
-APP_DB_PATH=/Users/oam/Workspace/demos/PageIndexDemo/var/app.db
-APP_UPLOAD_ROOT=/Users/oam/Workspace/demos/PageIndexDemo/var/uploads
+APP_VAR_ROOT="$PWD/var"
+APP_DB_PATH="$PWD/var/app.db"
+APP_UPLOAD_ROOT="$PWD/var/uploads"
 RETRIEVAL_API_BASE_URL=http://127.0.0.1:8001
 ```
 
 ### 2. Retrieval API
 
 ```bash
-cd /Users/oam/Workspace/demos/PageIndexDemo
 ./.venv/bin/uvicorn services.retrieval_api.app:app --reload --port 8001
 ```
 
 ### 3. Index worker
 
 ```bash
-cd /Users/oam/Workspace/demos/PageIndexDemo
 ./.venv/bin/python -m services.index_worker.worker
 ```
 
 ## Local Workflow
 
-1. Open `http://127.0.0.1:3000/projects`.
+1. Open `http://localhost:3000/projects`.
 2. Create a project.
 3. Upload a PDF into that project.
 4. Wait until the document status becomes `ready`.
-5. Open `http://127.0.0.1:3000/chat`.
+5. Open `http://localhost:3000/chat`.
 6. Select the project in chat scope.
 7. Ask a question and review the cited answer.
 
 ## Test Commands
 
 ```bash
-cd /Users/oam/Workspace/demos/PageIndexDemo/web
-pnpm test
-pnpm e2e
+pnpm -C web test
+pnpm -C web e2e
 ```
 
 # 📑 Introduction to PageIndex

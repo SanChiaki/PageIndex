@@ -1,0 +1,28 @@
+import React from "react";
+
+export type CitationItem = {
+  projectId?: string;
+  projectName: string;
+  documentId?: string;
+  documentName: string;
+  pages: string;
+};
+
+export function CitationList({ citations }: { citations: CitationItem[] }) {
+  if (citations.length === 0) {
+    return null;
+  }
+
+  return (
+    <ul className="mt-4 space-y-2 text-xs text-[var(--pi-muted)]">
+      {citations.map((citation, index) => (
+        <li
+          key={`${citation.projectName}-${citation.documentName}-${citation.pages}-${index}`}
+          className="rounded-xl border border-[var(--pi-border)] bg-[rgba(16,24,38,0.56)] px-3 py-2"
+        >
+          [{citation.projectName}] {citation.documentName} - pages {citation.pages}
+        </li>
+      ))}
+    </ul>
+  );
+}

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { notFound } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { DocumentTable } from "@/components/document-table";
 import { DocumentUploadModal } from "@/components/document-upload-modal";
@@ -19,25 +19,10 @@ export default async function ProjectDetailPage({
   const [{ projectId }, search] = await Promise.all([params, searchParams]);
   const query = (search.q ?? "").trim().toLowerCase();
   const conversations = listConversations(appConfig.dbPath, demoUserId);
-  const project = getProjectById(appConfig.dbPath, projectId);
+  const project = getProjectById(appConfig.dbPath, projectId, demoUserId);
 
   if (!project) {
-    return (
-      <AppShell conversations={conversations}>
-        <section className="rounded-[2rem] border border-[var(--pi-border)] bg-[var(--pi-panel)] px-6 py-12 text-center backdrop-blur-xl">
-          <h1 className="text-2xl font-semibold text-[var(--pi-ink)]">Project not found</h1>
-          <p className="mt-2 text-sm text-[var(--pi-muted)]">
-            This project may have been deleted.
-          </p>
-          <Link
-            href="/projects"
-            className="mt-6 inline-flex rounded-xl border border-[var(--pi-border)] px-4 py-2 text-sm text-[var(--pi-ink)]"
-          >
-            Back to projects
-          </Link>
-        </section>
-      </AppShell>
-    );
+    notFound();
   }
 
   const documents = listDocumentsByProject(appConfig.dbPath, projectId);

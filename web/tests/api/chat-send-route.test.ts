@@ -100,6 +100,39 @@ describe("chat send route validation", () => {
     expect(sendRetrievalQuery).not.toHaveBeenCalled();
   });
 
+  it("returns 404 when the conversation belongs to a different owner", async () => {
+    const { dbPath } = makeTempDb();
+    mockConfig(dbPath);
+    const conversation = createConversation(dbPath, "user_other");
+    const project = createProject(dbPath, {
+      ownerUserId: "user_demo",
+      name: "Alpha",
+    });
+
+    const sendRetrievalQuery = vi.fn();
+    vi.doMock("@/lib/retrieval-client", () => ({
+      sendRetrievalQuery,
+    }));
+
+    const { POST } = await import("@/app/api/chat/send/route");
+    const response = await POST(
+      new Request("http://localhost/api/chat/send", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          conversationId: conversation.id,
+          projectIds: [project.id],
+          message: "hello",
+        }),
+      }),
+    );
+    const json = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(json.error).toContain("Conversation");
+    expect(sendRetrievalQuery).not.toHaveBeenCalled();
+  });
+
   it("returns stable assistant failure payload and persists it when retrieval fails", async () => {
     const { dbPath } = makeTempDb();
     mockConfig(dbPath);

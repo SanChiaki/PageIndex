@@ -1,4 +1,6 @@
-import type { ReactNode } from "react";
+"use client";
+
+import { useState, type ReactNode } from "react";
 import { SidebarNav, type SidebarConversation } from "@/components/sidebar-nav";
 
 export function AppShell({
@@ -8,10 +10,20 @@ export function AppShell({
   conversations: SidebarConversation[];
   children: ReactNode;
 }) {
+  const [collapsed, setCollapsed] = useState(false);
+
   return (
     <div className="min-h-screen">
-      <SidebarNav conversations={conversations} />
-      <main className="relative min-h-screen px-4 pb-8 pt-6 md:ml-[18.5rem] md:px-8 md:pb-12 md:pt-8">
+      <SidebarNav
+        collapsed={collapsed}
+        conversations={conversations}
+        onToggleCollapse={() => setCollapsed((value) => !value)}
+      />
+      <main
+        className={`relative min-h-screen px-4 pb-8 pt-6 transition-[margin] md:px-8 md:pb-12 md:pt-8 ${
+          collapsed ? "md:ml-[6.75rem]" : "md:ml-[18.5rem]"
+        }`}
+      >
         <div className="mx-auto w-full max-w-[1180px]">{children}</div>
       </main>
     </div>

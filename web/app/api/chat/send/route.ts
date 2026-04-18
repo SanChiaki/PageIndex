@@ -10,6 +10,8 @@ import {
 } from "@/lib/repos/conversation-store";
 import { getProjectById } from "@/lib/repos/project-store";
 
+const demoUserId = "user_demo";
+
 const schema = z.object({
   conversationId: z.string().min(1),
   projectIds: z.array(z.string().min(1)).min(1),
@@ -32,13 +34,17 @@ export async function POST(request: Request) {
     );
   }
 
-  const conversation = getConversationById(appConfig.dbPath, parsed.data.conversationId);
+  const conversation = getConversationById(
+    appConfig.dbPath,
+    parsed.data.conversationId,
+    demoUserId,
+  );
   if (!conversation) {
     return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
   }
 
   const missingProjectIds = [...new Set(parsed.data.projectIds)].filter(
-    (projectId) => !getProjectById(appConfig.dbPath, projectId),
+    (projectId) => !getProjectById(appConfig.dbPath, projectId, demoUserId),
   );
   if (missingProjectIds.length > 0) {
     return NextResponse.json(

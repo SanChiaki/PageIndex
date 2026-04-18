@@ -68,16 +68,22 @@ export function listConversations(dbPath: string, ownerUserId: string) {
   }));
 }
 
-export function getConversationById(dbPath: string, conversationId: string) {
+export function getConversationById(
+  dbPath: string,
+  conversationId: string,
+  ownerUserId?: string,
+) {
   const db = open(dbPath);
+  const ownerFilter = ownerUserId ? "AND owner_user_id = ?" : "";
   const row = db
     .prepare(
       `SELECT id, title, updated_at
          FROM conversations
         WHERE id = ?
+          ${ownerFilter}
           AND deleted_at IS NULL`,
     )
-    .get(conversationId) as
+    .get(...(ownerUserId ? [conversationId, ownerUserId] : [conversationId])) as
     | { id: string; title: string; updated_at: string }
     | undefined;
   db.close();
@@ -178,18 +184,28 @@ export function updateConversationTitle(
   db.close();
 }
 
-export function getConversationDetail(dbPath: string, conversationId: string) {
+export function getConversationDetail(
+  dbPath: string,
+  conversationId: string,
+  ownerUserId?: string,
+) {
   const db = open(dbPath);
+  const ownerFilter = ownerUserId ? "AND owner_user_id = ?" : "";
   const conversation = db
     .prepare(
       `SELECT id, title, updated_at
          FROM conversations
         WHERE id = ?
+          ${ownerFilter}
           AND deleted_at IS NULL`,
     )
-    .get(conversationId) as
+    .get(...(ownerUserId ? [conversationId, ownerUserId] : [conversationId])) as
     | { id: string; title: string; updated_at: string }
     | undefined;
+  if (!conversation && ownerUserId) {
+    db.close();
+    return null;
+  }
   const projectRows = db
     .prepare(
       `SELECT cp.project_id, p.name

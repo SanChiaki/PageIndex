@@ -66,8 +66,13 @@ export function listProjects(dbPath: string, ownerUserId: string) {
   }));
 }
 
-export function getProjectById(dbPath: string, projectId: string) {
+export function getProjectById(
+  dbPath: string,
+  projectId: string,
+  ownerUserId?: string,
+) {
   const db = open(dbPath);
+  const ownerFilter = ownerUserId ? "AND p.owner_user_id = ?" : "";
   const row = db
     .prepare(
       `SELECT p.id, p.name, p.updated_at,
@@ -77,10 +82,11 @@ export function getProjectById(dbPath: string, projectId: string) {
            ON d.project_id = p.id
           AND d.deleted_at IS NULL
         WHERE p.id = ?
+          ${ownerFilter}
           AND p.deleted_at IS NULL
         GROUP BY p.id`,
     )
-    .get(projectId) as
+    .get(...(ownerUserId ? [projectId, ownerUserId] : [projectId])) as
     | { id: string; name: string; updated_at: string; document_count: number }
     | undefined;
 

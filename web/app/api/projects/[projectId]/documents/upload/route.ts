@@ -17,7 +17,7 @@ export async function POST(
   context: { params: Promise<{ projectId: string }> },
 ) {
   const { projectId } = await context.params;
-  const project = getProjectById(appConfig.dbPath, projectId);
+  const project = getProjectById(appConfig.dbPath, projectId, demoUserId);
   if (!project) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }

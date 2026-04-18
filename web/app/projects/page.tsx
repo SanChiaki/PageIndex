@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import { AppShell } from "@/components/app-shell";
 import { ProjectGrid } from "@/components/project-grid";
 import { appConfig } from "@/lib/config";
@@ -26,6 +27,7 @@ export default async function ProjectsPage({
       ownerUserId: demoUserId,
       name: `Project ${nameSeed}`,
     });
+    revalidatePath("/projects");
   }
 
   return (

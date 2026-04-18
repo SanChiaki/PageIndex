@@ -7,6 +7,7 @@ import { createProject } from "@/lib/repos/project-store";
 import {
   createConversation,
   replaceConversationProjects,
+  getConversationById,
   getConversationDetail,
   appendConversationMessage,
 } from "@/lib/repos/conversation-store";
@@ -62,5 +63,20 @@ describe("conversation store", () => {
 
     const detail = getConversationDetail(dbPath, conversation.id);
     expect(detail.projectIds).toEqual([project.id]);
+  });
+
+  it("scopes conversation lookup to the owner when provided", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-conv-owner-"));
+    tempDirs.push(dir);
+    const dbPath = path.join(dir, "app.db");
+    migrateDatabase(dbPath);
+
+    const ownConversation = createConversation(dbPath, "user_demo");
+    const otherConversation = createConversation(dbPath, "user_other");
+
+    expect(getConversationById(dbPath, ownConversation.id, "user_demo")?.id).toBe(
+      ownConversation.id,
+    );
+    expect(getConversationById(dbPath, otherConversation.id, "user_demo")).toBeNull();
   });
 });

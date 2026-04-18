@@ -1,0 +1,52 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  --font-body: "Avenir Next", "SF Pro Text", "Segoe UI", sans-serif;
+  --font-display: "Satoshi", "Avenir Next", "SF Pro Display", sans-serif;
+  --pi-bg: #05070c;
+  --pi-bg-soft: #0d121b;
+  --pi-panel: rgba(14, 20, 32, 0.72);
+  --pi-panel-strong: rgba(17, 24, 37, 0.9);
+  --pi-border: rgba(165, 184, 221, 0.18);
+  --pi-border-strong: rgba(165, 184, 221, 0.28);
+  --pi-ink: #e7edf9;
+  --pi-muted: #8ea0be;
+  --pi-brand: #3f7eff;
+  --pi-brand-soft: rgba(63, 126, 255, 0.3);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(1200px 680px at 100% -5%, rgba(58, 110, 255, 0.28), transparent 58%),
+    radial-gradient(900px 500px at -8% 34%, rgba(80, 103, 147, 0.24), transparent 56%),
+    linear-gradient(150deg, #05070c 8%, #090d14 56%, #0b111b 100%);
+  color: var(--pi-ink);
+  font-family: var(--font-body), "Segoe UI", sans-serif;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.03) 0, transparent 40%),
+    radial-gradient(circle at 75% 70%, rgba(142, 177, 255, 0.06) 0, transparent 35%);
+  mix-blend-mode: screen;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-display), var(--font-body), sans-serif;
+}

@@ -68,6 +68,28 @@ export function listConversations(dbPath: string, ownerUserId: string) {
   }));
 }
 
+export function getConversationById(dbPath: string, conversationId: string) {
+  const db = open(dbPath);
+  const row = db
+    .prepare(
+      `SELECT id, title, updated_at
+         FROM conversations
+        WHERE id = ?
+          AND deleted_at IS NULL`,
+    )
+    .get(conversationId) as
+    | { id: string; title: string; updated_at: string }
+    | undefined;
+  db.close();
+  return row
+    ? {
+        id: row.id,
+        title: row.title,
+        updatedAt: row.updated_at,
+      }
+    : null;
+}
+
 export function replaceConversationProjects(
   dbPath: string,
   conversationId: string,

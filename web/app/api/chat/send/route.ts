@@ -4,10 +4,11 @@ import { appConfig } from "@/lib/config";
 import { sendRetrievalQuery } from "@/lib/retrieval-client";
 import {
   appendConversationMessage,
-  getConversationDetail,
+  getConversationById,
   replaceConversationProjects,
   updateConversationTitle,
 } from "@/lib/repos/conversation-store";
+import { getProjectById } from "@/lib/repos/project-store";
 
 const schema = z.object({
   conversationId: z.string().min(1),
@@ -31,7 +32,20 @@ export async function POST(request: Request) {
     );
   }
 
-  const conversation = getConversationDetail(appConfig.dbPath, parsed.data.conversationId);
+  const conversation = getConversationById(appConfig.dbPath, parsed.data.conversationId);
+  if (!conversation) {
+    return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
+  }
+
+  const missingProjectIds = [...new Set(parsed.data.projectIds)].filter(
+    (projectId) => !getProjectById(appConfig.dbPath, projectId),
+  );
+  if (missingProjectIds.length > 0) {
+    return NextResponse.json(
+      { error: "One or more projects were not found.", missingProjectIds },
+      { status: 404 },
+    );
+  }
 
   replaceConversationProjects(
     appConfig.dbPath,

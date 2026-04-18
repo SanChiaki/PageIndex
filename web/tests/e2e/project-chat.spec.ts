@@ -8,20 +8,26 @@ test("creates a project and selects it in chat scope", async ({ page }) => {
     page.getByRole("heading", { name: "Projects", exact: true }),
   ).toBeVisible();
 
-  const emptyStateHeading = page.getByRole("heading", { name: "No projects yet" });
-  await expect(emptyStateHeading).toBeVisible();
+  const projectLinks = page.getByRole("link", { name: /^Open / });
+  const beforeCount = await projectLinks.count();
+  const beforeAriaLabels = await projectLinks.evaluateAll((elements) =>
+    elements.map((element) => element.getAttribute("aria-label")),
+  );
 
   await page.getByRole("button", { name: "New Project" }).click();
 
-  // Creating a project re-renders the page, so the empty state should disappear.
-  await expect(emptyStateHeading).toBeHidden();
+  await expect(projectLinks).toHaveCount(beforeCount + 1);
 
-  const projectLink = page.getByRole("link", { name: /^Open Project / }).first();
-  await expect(projectLink).toBeVisible();
+  const afterAriaLabels = await projectLinks.evaluateAll((elements) =>
+    elements.map((element) => element.getAttribute("aria-label")),
+  );
 
-  const projectAriaLabel = await projectLink.getAttribute("aria-label");
-  expect(projectAriaLabel).toBeTruthy();
-  const projectName = projectAriaLabel!.replace(/^Open\s+/, "");
+  const beforeSet = new Set(beforeAriaLabels.filter(Boolean) as string[]);
+  const createdAriaLabel = afterAriaLabels.find(
+    (value): value is string => Boolean(value) && !beforeSet.has(value),
+  );
+  expect(createdAriaLabel).toBeTruthy();
+  const projectName = createdAriaLabel!.replace(/^Open\s+/, "");
 
   await page.goto("/chat");
   await expect(page.getByRole("heading", { name: "New Chat" })).toBeVisible();

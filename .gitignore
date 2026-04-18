@@ -1,6 +1,8 @@
-.ipynb_checkpoints
-__pycache__
-.DS_Store
-.env*
 .venv/
-logs/
+__pycache__/
+.pytest_cache/
+node_modules/
+web/node_modules/
+web/.next/
+var/*
+!var/.gitkeep

@@ -4,6 +4,9 @@ from typing import Any
 from services.common.sqlite_store import open_db
 from services.retrieval_api.select_documents import select_candidate_documents
 
+MAX_PAGE_RANGE_SIZE = 1000
+MAX_PAGE_SELECTION_SIZE = 1000
+
 
 def build_citation(project: dict[str, str], document: dict[str, str], pages: str) -> dict:
     return {
@@ -48,7 +51,7 @@ def _parse_page_window(pages: str) -> list[int] | None:
     if not text:
         return None
 
-    parsed: list[int] = []
+    selected_pages: set[int] = set()
     for token in text.split(","):
         part = token.strip()
         if not part:
@@ -61,16 +64,26 @@ def _parse_page_window(pages: str) -> list[int] | None:
             end = int(right.strip())
             if start <= 0 or end < start:
                 return None
-            parsed.extend(range(start, end + 1))
+            span = end - start + 1
+            if span > MAX_PAGE_RANGE_SIZE:
+                return None
+            if len(selected_pages) + span > MAX_PAGE_SELECTION_SIZE:
+                return None
+            for page in range(start, end + 1):
+                selected_pages.add(page)
             continue
         if not part.isdigit():
             return None
         page = int(part)
         if page <= 0:
             return None
-        parsed.append(page)
+        selected_pages.add(page)
+        if len(selected_pages) > MAX_PAGE_SELECTION_SIZE:
+            return None
 
-    return sorted(set(parsed))
+    if not selected_pages:
+        return None
+    return sorted(selected_pages)
 
 
 def _is_valid_page_window(pages: str, document: dict[str, Any]) -> bool:

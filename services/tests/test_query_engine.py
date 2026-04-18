@@ -183,3 +183,40 @@ def test_answer_question_skips_bad_index_rows_and_uses_good_documents(tmp_path, 
             "pages": "1",
         }
     ]
+
+
+def test_answer_question_falls_back_when_llm_pages_range_is_oversized(
+    tmp_path, monkeypatch
+):
+    db_path = _seed_retrieval_db(tmp_path)
+    _insert_ready_document(
+        db_path,
+        document_id="doc_large",
+        file_name="large.pdf",
+        doc_description="cash flow deep dive",
+        structure_json=json.dumps([{"title": "large"}]),
+        pages_json=json.dumps(
+            [
+                {"page": page, "content": f"content-{page}"}
+                for page in range(1, 1002)
+            ]
+        ),
+    )
+
+    monkeypatch.setattr(
+        "services.retrieval_api.query_engine.choose_page_window",
+        lambda _query, _doc: "1-1001",
+    )
+    monkeypatch.setattr(
+        "services.retrieval_api.query_engine._load_page_excerpt",
+        lambda _document, pages: [{"page": 1, "content": f"evidence:{pages}"}],
+    )
+    monkeypatch.setattr(
+        "services.retrieval_api.query_engine._generate_answer",
+        lambda _query, _blocks: "answer with fallback",
+    )
+
+    result = answer_question(str(db_path), "cash flow", ["proj_1"])
+
+    assert result["answer"] == "answer with fallback"
+    assert result["citations"][0]["pages"] == "1-2"

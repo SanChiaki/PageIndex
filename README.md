@@ -26,6 +26,54 @@
   
 </div>
 
+---
+
+## Project-Centric Knowledge Chat (Local Development)
+
+This branch includes a simple project-centric workflow in [`web/`](web): create projects, upload PDFs, let the index worker process them, then chat with a project scope.
+
+### Services to Run
+
+1. **Web app (Next.js)**
+
+```bash
+pnpm -C web install
+pnpm -C web db:migrate
+pnpm -C web dev
+```
+
+2. **Retrieval API (FastAPI)**
+
+```bash
+./.venv/bin/python -m pip install -r requirements.txt
+./.venv/bin/uvicorn services.retrieval_api.app:app --reload --port 8001
+```
+
+3. **Index worker**
+
+```bash
+./.venv/bin/python -m services.index_worker.worker
+```
+
+Notes:
+- By default, all processes share the same on-disk state under `./var/` (SQLite DB + uploads). You can override with `APP_VAR_ROOT`, `APP_DB_PATH`, and `APP_UPLOAD_ROOT`.
+- The web app points to the retrieval API via `RETRIEVAL_API_BASE_URL` (default `http://127.0.0.1:8001`).
+
+### End-to-End Workflow
+
+1. Open `http://localhost:3000/projects`.
+2. Click `New Project`.
+3. Open the project, upload a PDF, and wait until indexing completes.
+4. Open `http://localhost:3000/chat`, select the project in the scope picker, and ask a question.
+
+### E2E Tests (Playwright)
+
+```bash
+pnpm -C web e2e
+```
+
+The Playwright config uses an isolated `var-e2e/` directory so runs start from a clean DB.
+
 
 <details open>
 <summary><h2>📢 Updates</h2></summary>
@@ -41,6 +89,70 @@
 </details>
 
 ---
+
+# Project-Centric Knowledge Chat Demo
+
+This repository now includes a local Next.js workspace under `web/` that wraps the
+PageIndex core with:
+
+- project-level document management
+- PDF upload and indexing jobs
+- project-scoped chat with citations
+- local retrieval and indexing services
+
+## Local Services
+
+Run these processes in separate terminals from the repository root unless noted.
+
+### 1. Web app
+
+```bash
+cd /Users/oam/Workspace/demos/PageIndexDemo/web
+pnpm install
+pnpm db:migrate
+pnpm dev
+```
+
+Optional environment overrides:
+
+```bash
+APP_VAR_ROOT=/Users/oam/Workspace/demos/PageIndexDemo/var
+APP_DB_PATH=/Users/oam/Workspace/demos/PageIndexDemo/var/app.db
+APP_UPLOAD_ROOT=/Users/oam/Workspace/demos/PageIndexDemo/var/uploads
+RETRIEVAL_API_BASE_URL=http://127.0.0.1:8001
+```
+
+### 2. Retrieval API
+
+```bash
+cd /Users/oam/Workspace/demos/PageIndexDemo
+./.venv/bin/uvicorn services.retrieval_api.app:app --reload --port 8001
+```
+
+### 3. Index worker
+
+```bash
+cd /Users/oam/Workspace/demos/PageIndexDemo
+./.venv/bin/python -m services.index_worker.worker
+```
+
+## Local Workflow
+
+1. Open `http://127.0.0.1:3000/projects`.
+2. Create a project.
+3. Upload a PDF into that project.
+4. Wait until the document status becomes `ready`.
+5. Open `http://127.0.0.1:3000/chat`.
+6. Select the project in chat scope.
+7. Ask a question and review the cited answer.
+
+## Test Commands
+
+```bash
+cd /Users/oam/Workspace/demos/PageIndexDemo/web
+pnpm test
+pnpm e2e
+```
 
 # 📑 Introduction to PageIndex
 

@@ -57,12 +57,11 @@ def process_document_job(db_path: str, job_id: str):
               id, document_id, doc_name, doc_description, structure_json,
               pages_json, index_version, indexed_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
+            ON CONFLICT(document_id) DO UPDATE SET
               doc_name = excluded.doc_name,
               doc_description = excluded.doc_description,
               structure_json = excluded.structure_json,
               pages_json = excluded.pages_json,
-              document_id = excluded.document_id,
               index_version = excluded.index_version,
               indexed_at = excluded.indexed_at
             """,

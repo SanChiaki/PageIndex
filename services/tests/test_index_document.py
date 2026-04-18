@@ -141,6 +141,54 @@ def test_process_document_job_reindex_is_idempotent_for_same_document(tmp_path, 
     assert document_row == ("ready", None)
 
 
+def test_process_document_job_updates_legacy_index_row_with_same_document_id(tmp_path, monkeypatch):
+    db_path = _seed_single_document_job_db(tmp_path)
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """
+        INSERT INTO document_indexes (
+          id, document_id, doc_name, doc_description, structure_json,
+          pages_json, index_version, indexed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "legacy_idx_1",
+            "doc_1",
+            "legacy-name.pdf",
+            "legacy description",
+            json.dumps([{"title": "Legacy"}]),
+            json.dumps([{"page": 1, "content": "legacy"}]),
+            "v0",
+            "2026-04-19T00:00:00Z",
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(
+        "services.index_worker.index_document.build_pageindex_payload",
+        lambda file_path: {
+            "doc_name": "alpha-new.pdf",
+            "doc_description": "new description",
+            "structure": [{"title": "Updated"}],
+            "pages": [{"page": 1, "content": "new"}],
+            "page_count": 1,
+        },
+    )
+
+    process_document_job(str(db_path), "job_1")
+
+    conn = sqlite3.connect(db_path)
+    row_count = conn.execute("SELECT COUNT(*) FROM document_indexes WHERE document_id = 'doc_1'").fetchone()[0]
+    index_row = conn.execute(
+        "SELECT id, doc_name, doc_description FROM document_indexes WHERE document_id = 'doc_1'"
+    ).fetchone()
+    conn.close()
+
+    assert row_count == 1
+    assert index_row == ("legacy_idx_1", "alpha-new.pdf", "new description")
+
+
 def test_process_document_job_requires_running_document_index_job(tmp_path):
     db_path = _seed_single_document_job_db(tmp_path)
 

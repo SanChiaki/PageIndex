@@ -1,0 +1,48 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { migrateDatabase } from "@/lib/db/migrate";
+import { createProject } from "@/lib/repos/project-store";
+import {
+  createConversation,
+  replaceConversationProjects,
+  getConversationDetail,
+  appendConversationMessage,
+} from "@/lib/repos/conversation-store";
+
+const tempDirs: string[] = [];
+
+afterEach(() => {
+  while (tempDirs.length > 0) {
+    fs.rmSync(tempDirs.pop()!, { recursive: true, force: true });
+  }
+});
+
+describe("conversation store", () => {
+  it("persists project scope on a conversation", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-conv-"));
+    tempDirs.push(dir);
+    const dbPath = path.join(dir, "app.db");
+    migrateDatabase(dbPath);
+
+    const project = createProject(dbPath, {
+      ownerUserId: "user_demo",
+      name: "Alpha",
+    });
+
+    const conversation = createConversation(dbPath, "user_demo");
+    replaceConversationProjects(dbPath, conversation.id, [project.id]);
+    appendConversationMessage(dbPath, {
+      conversationId: conversation.id,
+      role: "user",
+      content: "Summarize Alpha",
+      citations: [],
+    });
+
+    const detail = getConversationDetail(dbPath, conversation.id);
+
+    expect(detail.projectIds).toEqual([project.id]);
+    expect(detail.messages).toHaveLength(1);
+  });
+});

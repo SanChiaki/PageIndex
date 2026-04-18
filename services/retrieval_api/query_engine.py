@@ -30,6 +30,59 @@ def _default_page_window(document: dict[str, Any]) -> str:
     return f"{page_numbers[0]}-{page_numbers[1]}"
 
 
+def _available_page_numbers(document: dict[str, Any]) -> list[int]:
+    page_numbers = sorted(
+        {
+            int(page["page"])
+            for page in document.get("pages", [])
+            if isinstance(page, dict) and isinstance(page.get("page"), int)
+        }
+    )
+    return page_numbers
+
+
+def _parse_page_window(pages: str) -> list[int] | None:
+    if not isinstance(pages, str):
+        return None
+    text = pages.strip()
+    if not text:
+        return None
+
+    parsed: list[int] = []
+    for token in text.split(","):
+        part = token.strip()
+        if not part:
+            return None
+        if "-" in part:
+            left, right = part.split("-", 1)
+            if not left.strip().isdigit() or not right.strip().isdigit():
+                return None
+            start = int(left.strip())
+            end = int(right.strip())
+            if start <= 0 or end < start:
+                return None
+            parsed.extend(range(start, end + 1))
+            continue
+        if not part.isdigit():
+            return None
+        page = int(part)
+        if page <= 0:
+            return None
+        parsed.append(page)
+
+    return sorted(set(parsed))
+
+
+def _is_valid_page_window(pages: str, document: dict[str, Any]) -> bool:
+    selected = _parse_page_window(pages)
+    if not selected:
+        return False
+    available = set(_available_page_numbers(document))
+    if not available:
+        return False
+    return all(page in available for page in selected)
+
+
 def _build_document_map(document: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {
         document["id"]: {
@@ -67,7 +120,9 @@ Return JSON only:
 
     pages = parsed.get("pages") if isinstance(parsed, dict) else None
     if isinstance(pages, str) and pages.strip():
-        return pages.strip()
+        pages = pages.strip()
+        if _is_valid_page_window(pages, document):
+            return pages
     return fallback
 
 
@@ -130,6 +185,13 @@ def answer_question(db_path: str, query: str, project_ids: list[str]) -> dict:
 
     docs = []
     for row in rows:
+        try:
+            structure = json.loads(row["structure_json"])
+            pages = json.loads(row["pages_json"])
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(structure, list) or not isinstance(pages, list):
+            continue
         docs.append(
             {
                 "id": row["id"],
@@ -137,8 +199,8 @@ def answer_question(db_path: str, query: str, project_ids: list[str]) -> dict:
                 "project_name": row["project_name"],
                 "file_name": row["file_name"],
                 "doc_description": row["doc_description"],
-                "structure": json.loads(row["structure_json"]),
-                "pages": json.loads(row["pages_json"]),
+                "structure": structure,
+                "pages": pages,
             }
         )
 
@@ -152,9 +214,18 @@ def answer_question(db_path: str, query: str, project_ids: list[str]) -> dict:
 
     context_blocks = []
     citations = []
+    used_documents = []
     for document in selected:
         pages = choose_page_window(query, document)
+        fallback_pages = _default_page_window(document)
+        if not _is_valid_page_window(pages, document):
+            pages = fallback_pages
         evidence = _load_page_excerpt(document, pages)
+        if not evidence and pages != fallback_pages:
+            pages = fallback_pages
+            evidence = _load_page_excerpt(document, pages)
+        if not evidence:
+            continue
         context_blocks.append(
             {
                 "project": document["project_name"],
@@ -170,9 +241,17 @@ def answer_question(db_path: str, query: str, project_ids: list[str]) -> dict:
                 pages=pages,
             )
         )
+        used_documents.append(document)
+
+    if not used_documents:
+        return {
+            "answer": "I could not find usable evidence in selected documents.",
+            "citations": [],
+            "selectedDocuments": [],
+        }
 
     return {
         "answer": _generate_answer(query, context_blocks),
         "citations": citations,
-        "selectedDocuments": [{"documentId": document["id"]} for document in selected],
+        "selectedDocuments": [{"documentId": document["id"]} for document in used_documents],
     }

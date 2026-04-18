@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { migrateDatabase } from "@/lib/db/migrate";
-import { createConversation } from "@/lib/repos/conversation-store";
+import { createConversation, getConversationDetail } from "@/lib/repos/conversation-store";
 import { createProject } from "@/lib/repos/project-store";
 
 const tempDirs: string[] = [];
@@ -98,5 +98,50 @@ describe("chat send route validation", () => {
     expect(response.status).toBe(404);
     expect(json.error).toContain("project");
     expect(sendRetrievalQuery).not.toHaveBeenCalled();
+  });
+
+  it("returns stable assistant failure payload and persists it when retrieval fails", async () => {
+    const { dbPath } = makeTempDb();
+    mockConfig(dbPath);
+    const conversation = createConversation(dbPath, "user_demo");
+    const project = createProject(dbPath, {
+      ownerUserId: "user_demo",
+      name: "Alpha",
+    });
+
+    const sendRetrievalQuery = vi.fn().mockRejectedValue(new Error("retrieval down"));
+    vi.doMock("@/lib/retrieval-client", () => ({
+      sendRetrievalQuery,
+    }));
+
+    const { POST } = await import("@/app/api/chat/send/route");
+    const response = await POST(
+      new Request("http://localhost/api/chat/send", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          conversationId: conversation.id,
+          projectIds: [project.id],
+          message: "Summarize alpha revenue",
+        }),
+      }),
+    );
+    const json = await response.json();
+    const detail = getConversationDetail(dbPath, conversation.id);
+
+    expect(response.status).toBe(200);
+    expect(json).toEqual({
+      answer: "I ran into a retrieval error. Please try again.",
+      citations: [],
+      selectedDocuments: [],
+    });
+    expect(detail.title).toBe("Summarize alpha revenue");
+    expect(detail.messages).toHaveLength(2);
+    expect(detail.messages[0].role).toBe("user");
+    expect(detail.messages[0].content).toBe("Summarize alpha revenue");
+    expect(detail.messages[1].role).toBe("assistant");
+    expect(detail.messages[1].content).toBe(json.answer);
+    expect(detail.messages[1].citations).toEqual([]);
+    expect(sendRetrievalQuery).toHaveBeenCalledTimes(1);
   });
 });

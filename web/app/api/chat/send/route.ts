@@ -73,7 +73,11 @@ export async function POST(request: Request) {
       projectIds: parsed.data.projectIds,
     });
   } catch {
-    return NextResponse.json({ error: "Failed to retrieve answer." }, { status: 502 });
+    result = {
+      answer: "I ran into a retrieval error. Please try again.",
+      citations: [],
+      selectedDocuments: [],
+    };
   }
 
   appendConversationMessage(appConfig.dbPath, {

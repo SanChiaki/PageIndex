@@ -1,0 +1,252 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import Database from "better-sqlite3";
+import { NextRequest } from "next/server";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { migrateDatabase } from "@/lib/db/migrate";
+import { createDocumentRecord } from "@/lib/repos/document-store";
+import { createProject } from "@/lib/repos/project-store";
+
+const tempDirs: string[] = [];
+
+function makeTempDb() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-route-"));
+  tempDirs.push(dir);
+  const dbPath = path.join(dir, "app.db");
+  migrateDatabase(dbPath);
+  return { dir, dbPath };
+}
+
+function mockConfig(dbPath: string, uploadRoot: string) {
+  vi.doMock("@/lib/config", () => ({
+    appConfig: {
+      dbPath,
+      uploadRoot,
+    },
+  }));
+}
+
+afterEach(() => {
+  vi.resetModules();
+  vi.unmock("@/lib/config");
+  while (tempDirs.length > 0) {
+    fs.rmSync(tempDirs.pop()!, { recursive: true, force: true });
+  }
+});
+
+describe("task2 route hardening", () => {
+  it("returns 400 for invalid project create payload", async () => {
+    const { dir, dbPath } = makeTempDb();
+    mockConfig(dbPath, path.join(dir, "uploads"));
+
+    const { POST } = await import("@/app/api/projects/route");
+    const response = await POST(
+      new Request("http://localhost/api/projects", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+  });
+
+  it("returns 400 for invalid conversation project payload", async () => {
+    const { dir, dbPath } = makeTempDb();
+    mockConfig(dbPath, path.join(dir, "uploads"));
+
+    const { PUT } = await import(
+      "@/app/api/conversations/[conversationId]/projects/route"
+    );
+    const response = await PUT(
+      new Request("http://localhost/api/conversations/conv_1/projects", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ projectIds: [""] }),
+      }),
+      { params: Promise.resolve({ conversationId: "conv_1" }) },
+    );
+
+    expect(response.status).toBe(400);
+  });
+
+  it("returns 404 when upload target project is missing", async () => {
+    const { dir, dbPath } = makeTempDb();
+    mockConfig(dbPath, path.join(dir, "uploads"));
+
+    const { POST } = await import(
+      "@/app/api/projects/[projectId]/documents/upload/route"
+    );
+    const form = new FormData();
+    form.set(
+      "file",
+      new File([Buffer.from("%PDF-1.7\nhello")], "x.pdf", {
+        type: "application/pdf",
+      }),
+    );
+    const response = await POST(
+      new Request("http://localhost/api/upload", {
+        method: "POST",
+        body: form,
+      }) as any,
+      { params: Promise.resolve({ projectId: "proj_missing" }) },
+    );
+
+    expect(response.status).toBe(404);
+  });
+
+  it("returns 400 when upload content is not a PDF signature", async () => {
+    const { dir, dbPath } = makeTempDb();
+    mockConfig(dbPath, path.join(dir, "uploads"));
+    const project = createProject(dbPath, {
+      ownerUserId: "user_demo",
+      name: "Alpha",
+    });
+
+    const { POST } = await import(
+      "@/app/api/projects/[projectId]/documents/upload/route"
+    );
+    const form = new FormData();
+    form.set(
+      "file",
+      new File([Buffer.from("not-a-pdf")], "x.pdf", {
+        type: "application/pdf",
+      }),
+    );
+    const response = await POST(
+      new Request("http://localhost/api/upload", {
+        method: "POST",
+        body: form,
+      }) as any,
+      { params: Promise.resolve({ projectId: project.id }) },
+    );
+
+    expect(response.status).toBe(400);
+  });
+
+  it("returns 404 when reindexing a missing document", async () => {
+    const { dir, dbPath } = makeTempDb();
+    mockConfig(dbPath, path.join(dir, "uploads"));
+
+    const { POST } = await import("@/app/api/documents/[documentId]/reindex/route");
+    const response = await POST(new Request("http://localhost/reindex", { method: "POST" }), {
+      params: Promise.resolve({ documentId: "doc_missing" }),
+    });
+
+    expect(response.status).toBe(404);
+  });
+
+  it("does not expose storagePath in document detail response", async () => {
+    const { dir, dbPath } = makeTempDb();
+    mockConfig(dbPath, path.join(dir, "uploads"));
+
+    const project = createProject(dbPath, {
+      ownerUserId: "user_demo",
+      name: "Alpha",
+    });
+    const document = createDocumentRecord(dbPath, {
+      ownerUserId: "user_demo",
+      projectId: project.id,
+      fileName: "alpha.pdf",
+      storagePath: "/tmp/secret/alpha.pdf",
+      mimeType: "application/pdf",
+      fileSize: 16,
+    });
+
+    const { GET } = await import("@/app/api/documents/[documentId]/route");
+    const response = await GET(new Request("http://localhost/doc"), {
+      params: Promise.resolve({ documentId: document.id }),
+    });
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json.storagePath).toBeUndefined();
+  });
+
+  it("returns 400 for invalid pages filter", async () => {
+    const { dir, dbPath } = makeTempDb();
+    mockConfig(dbPath, path.join(dir, "uploads"));
+
+    const project = createProject(dbPath, {
+      ownerUserId: "user_demo",
+      name: "Alpha",
+    });
+    const document = createDocumentRecord(dbPath, {
+      ownerUserId: "user_demo",
+      projectId: project.id,
+      fileName: "alpha.pdf",
+      storagePath: "/tmp/alpha.pdf",
+      mimeType: "application/pdf",
+      fileSize: 16,
+    });
+
+    const db = new Database(dbPath);
+    db.prepare(
+      `INSERT INTO document_indexes (
+         id, document_id, doc_name, doc_description, structure_json, pages_json, index_version, indexed_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      "idx_1",
+      document.id,
+      "alpha",
+      "alpha",
+      "[]",
+      JSON.stringify([{ page: 1, content: "a" }]),
+      "v1",
+      new Date().toISOString(),
+    );
+    db.close();
+
+    const { GET } = await import("@/app/api/documents/[documentId]/pages/route");
+    const request = new NextRequest("http://localhost/doc/pages?pages=abc");
+    const response = await GET(request, {
+      params: Promise.resolve({ documentId: document.id }),
+    });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("returns 400 for overly large pages ranges", async () => {
+    const { dir, dbPath } = makeTempDb();
+    mockConfig(dbPath, path.join(dir, "uploads"));
+
+    const project = createProject(dbPath, {
+      ownerUserId: "user_demo",
+      name: "Alpha",
+    });
+    const document = createDocumentRecord(dbPath, {
+      ownerUserId: "user_demo",
+      projectId: project.id,
+      fileName: "alpha.pdf",
+      storagePath: "/tmp/alpha.pdf",
+      mimeType: "application/pdf",
+      fileSize: 16,
+    });
+
+    const db = new Database(dbPath);
+    db.prepare(
+      `INSERT INTO document_indexes (
+         id, document_id, doc_name, doc_description, structure_json, pages_json, index_version, indexed_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      "idx_2",
+      document.id,
+      "alpha",
+      "alpha",
+      "[]",
+      JSON.stringify([{ page: 1, content: "a" }]),
+      "v1",
+      new Date().toISOString(),
+    );
+    db.close();
+
+    const { GET } = await import("@/app/api/documents/[documentId]/pages/route");
+    const request = new NextRequest("http://localhost/doc/pages?pages=1-999999");
+    const response = await GET(request, {
+      params: Promise.resolve({ documentId: document.id }),
+    });
+
+    expect(response.status).toBe(400);
+  });
+});

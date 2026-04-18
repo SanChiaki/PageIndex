@@ -45,4 +45,22 @@ describe("conversation store", () => {
     expect(detail.projectIds).toEqual([project.id]);
     expect(detail.messages).toHaveLength(1);
   });
+
+  it("dedupes repeated project ids when replacing conversation scope", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-conv-dedupe-"));
+    tempDirs.push(dir);
+    const dbPath = path.join(dir, "app.db");
+    migrateDatabase(dbPath);
+
+    const project = createProject(dbPath, {
+      ownerUserId: "user_demo",
+      name: "Alpha",
+    });
+
+    const conversation = createConversation(dbPath, "user_demo");
+    replaceConversationProjects(dbPath, conversation.id, [project.id, project.id]);
+
+    const detail = getConversationDetail(dbPath, conversation.id);
+    expect(detail.projectIds).toEqual([project.id]);
+  });
 });

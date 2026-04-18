@@ -8,7 +8,14 @@ export async function GET(
 ) {
   const { documentId } = await context.params;
   const pages = request.nextUrl.searchParams.get("pages");
-  return NextResponse.json({
-    pages: getDocumentPages(appConfig.dbPath, documentId, pages),
-  });
+  try {
+    return NextResponse.json({
+      pages: getDocumentPages(appConfig.dbPath, documentId, pages),
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Invalid pages filter." },
+      { status: 400 },
+    );
+  }
 }

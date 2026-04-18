@@ -75,6 +75,7 @@ export function replaceConversationProjects(
 ) {
   const db = open(dbPath);
   const now = new Date().toISOString();
+  const uniqueProjectIds = [...new Set(projectIds)];
   const insert = db.prepare(
     `INSERT INTO conversation_projects (conversation_id, project_id, created_at)
      VALUES (?, ?, ?)`,
@@ -85,7 +86,7 @@ export function replaceConversationProjects(
       conversationId,
     );
 
-    for (const projectId of projectIds) {
+    for (const projectId of uniqueProjectIds) {
       insert.run(conversationId, projectId, now);
     }
   });

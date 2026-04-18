@@ -11,5 +11,6 @@ export async function GET(
   if (!document) {
     return NextResponse.json({ error: "Document not found" }, { status: 404 });
   }
-  return NextResponse.json(document);
+  const { storagePath: _storagePath, ...safeDocument } = document;
+  return NextResponse.json(safeDocument);
 }

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { z } from "zod";
 import { appConfig } from "@/lib/config";
 import {
@@ -18,9 +18,16 @@ export async function GET() {
   });
 }
 
-export async function POST(request: NextRequest) {
-  const body = schema.parse(await request.json().catch(() => ({})));
+export async function POST(request: Request) {
+  const parsed = schema.safeParse(await request.json().catch(() => ({})));
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "Invalid request payload.", details: parsed.error.issues },
+      { status: 400 },
+    );
+  }
+
   const conversation = createConversation(appConfig.dbPath, demoUserId);
-  replaceConversationProjects(appConfig.dbPath, conversation.id, body.projectIds);
+  replaceConversationProjects(appConfig.dbPath, conversation.id, parsed.data.projectIds);
   return NextResponse.json(conversation, { status: 201 });
 }

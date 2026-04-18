@@ -55,22 +55,47 @@ export function createDocumentRecord(
 function parsePagesFilter(pages: string | null) {
   if (!pages) return null;
 
-  const selected = new Set<number>();
-  for (const part of pages.split(",")) {
-    const token = part.trim();
-    if (!token) continue;
+  const trimmed = pages.trim();
+  if (!trimmed) return null;
 
+  const parts = trimmed.split(",").map((part) => part.trim()).filter(Boolean);
+  if (parts.length > 100) {
+    throw new Error("Too many page selectors.");
+  }
+
+  const selected = new Set<number>();
+  for (const token of parts) {
     if (token.includes("-")) {
+      if (token.indexOf("-") !== token.lastIndexOf("-")) {
+        throw new Error("Invalid page range.");
+      }
+
       const [startText, endText] = token.split("-", 2);
       const start = Number(startText);
       const end = Number(endText);
+      if (
+        !Number.isInteger(start) ||
+        !Number.isInteger(end) ||
+        start < 1 ||
+        end < start
+      ) {
+        throw new Error("Invalid page range.");
+      }
+      if (end - start + 1 > 1000) {
+        throw new Error("Page range too large.");
+      }
+
       for (let page = start; page <= end; page += 1) {
         selected.add(page);
       }
       continue;
     }
 
-    selected.add(Number(token));
+    const page = Number(token);
+    if (!Number.isInteger(page) || page < 1) {
+      throw new Error("Invalid page number.");
+    }
+    selected.add(page);
   }
 
   return selected;

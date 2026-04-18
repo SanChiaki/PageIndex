@@ -36,6 +36,25 @@ function isCitationItem(citation: CitationItem | null): citation is CitationItem
   return citation !== null;
 }
 
+function getScopeSummary(
+  selectedProjectIds: string[],
+  availableProjects: Array<{ id: string; name: string }>,
+) {
+  if (selectedProjectIds.length === 0) {
+    return "No project selected";
+  }
+
+  const projectNames = selectedProjectIds
+    .map((projectId) => availableProjects.find((project) => project.id === projectId)?.name)
+    .filter((name): name is string => Boolean(name));
+
+  if (projectNames.length <= 1) {
+    return projectNames[0] ?? "No project selected";
+  }
+
+  return "Multiple projects";
+}
+
 export default async function ChatPage({
   searchParams,
 }: {
@@ -60,6 +79,7 @@ export default async function ChatPage({
   const selectedProjectIds = (conversation?.projectIds ?? []).filter((projectId) =>
     availableProjectIdSet.has(projectId),
   );
+  const scopeSummary = getScopeSummary(selectedProjectIds, availableProjects);
   const messages = (conversation?.messages ?? []).map((message) => ({
     id: message.id,
     role: message.role,
@@ -74,9 +94,15 @@ export default async function ChatPage({
       <section className="flex min-h-[calc(100vh-4.25rem)] flex-col">
         <header className="rounded-[2rem] border border-[var(--pi-border)] bg-[var(--pi-panel)] px-6 py-6 backdrop-blur-xl md:px-8">
           <p className="text-xs uppercase tracking-[0.16em] text-[var(--pi-muted)]">Chat</p>
-          <h1 className="mt-2 text-3xl font-semibold text-[var(--pi-ink)] md:text-4xl">
-            {conversation?.title ?? "New Chat"}
-          </h1>
+          <div className="mt-2 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <h1 className="text-3xl font-semibold text-[var(--pi-ink)] md:text-4xl">
+              {conversation?.title ?? "New Chat"}
+            </h1>
+            <div className="inline-flex items-center gap-2 self-start rounded-full border border-[var(--pi-border)] bg-[rgba(14,21,34,0.72)] px-3 py-1.5 text-xs text-[var(--pi-muted)]">
+              <span className="uppercase tracking-[0.14em]">Scope</span>
+              <span className="text-[var(--pi-ink)]">{scopeSummary}</span>
+            </div>
+          </div>
         </header>
 
         <div className="relative mt-6 flex-1">

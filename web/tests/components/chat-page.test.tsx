@@ -180,4 +180,50 @@ describe("Chat page components", () => {
       "user_demo",
     );
   });
+
+  it("renders the selected project scope in the chat header", async () => {
+    const listConversations = vi.fn(() => [
+      { id: "conv_1", title: "Quarterly review", scopeLabel: "Alpha" },
+    ]);
+    const getConversationDetail = vi.fn(() => ({
+      id: "conv_1",
+      title: "Quarterly review",
+      projectIds: ["proj_1"],
+      projects: [{ id: "proj_1", name: "Alpha" }],
+      messages: [],
+    }));
+    const listProjects = vi.fn(() => [
+      { id: "proj_1", name: "Alpha" },
+      { id: "proj_2", name: "Beta" },
+    ]);
+
+    vi.doMock("@/lib/config", () => ({
+      appConfig: {
+        dbPath: "/tmp/chat-page-test.db",
+        retrievalBaseUrl: "http://127.0.0.1:8001",
+      },
+    }));
+    vi.doMock("@/lib/repos/conversation-store", () => ({
+      listConversations,
+      getConversationDetail,
+    }));
+    vi.doMock("@/lib/repos/project-store", () => ({
+      listProjects,
+    }));
+    vi.doMock("@/components/app-shell", () => ({
+      AppShell: ({ children }: { children: React.ReactNode }) => (
+        <div data-testid="mock-shell">{children}</div>
+      ),
+    }));
+
+    const module = await import("@/app/chat/page");
+    const view = await module.default({
+      searchParams: Promise.resolve({ conversationId: "conv_1" }),
+    });
+    render(view);
+
+    expect(screen.getByRole("heading", { name: /quarterly review/i })).toBeInTheDocument();
+    expect(screen.getByText(/scope/i)).toBeInTheDocument();
+    expect(screen.getByText("Alpha", { selector: "span" })).toBeInTheDocument();
+  });
 });

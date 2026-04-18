@@ -3,7 +3,7 @@ import { appConfig } from "@/lib/config";
 import { createDocumentRecord } from "@/lib/repos/document-store";
 import { createIndexJob } from "@/lib/repos/job-store";
 import { getProjectById } from "@/lib/repos/project-store";
-import { saveUploadedPdf } from "@/lib/storage/local-files";
+import { saveUploadedPdf, UploadValidationError } from "@/lib/storage/local-files";
 
 const demoUserId = "user_demo";
 
@@ -35,8 +35,11 @@ export async function POST(
   let stored: { storagePath: string; fileSize: number };
   try {
     stored = await saveUploadedPdf(projectId, file);
-  } catch {
-    return NextResponse.json({ error: "Invalid upload path." }, { status: 400 });
+  } catch (error) {
+    if (error instanceof UploadValidationError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    return NextResponse.json({ error: "Failed to save uploaded file." }, { status: 500 });
   }
 
   const document = createDocumentRecord(appConfig.dbPath, {

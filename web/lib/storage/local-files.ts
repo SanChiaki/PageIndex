@@ -4,9 +4,11 @@ import { appConfig } from "@/lib/config";
 
 const PROJECT_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 
+export class UploadValidationError extends Error {}
+
 export async function saveUploadedPdf(projectId: string, file: File) {
   if (!PROJECT_ID_PATTERN.test(projectId)) {
-    throw new Error("Invalid project id.");
+    throw new UploadValidationError("Invalid project id.");
   }
 
   const bytes = Buffer.from(await file.arrayBuffer());
@@ -15,7 +17,7 @@ export async function saveUploadedPdf(projectId: string, file: File) {
   const relativePath = path.join(projectId, `${Date.now()}-${safeName}`);
   const absolutePath = path.resolve(uploadRoot, relativePath);
   if (!absolutePath.startsWith(`${uploadRoot}${path.sep}`)) {
-    throw new Error("Invalid upload path.");
+    throw new UploadValidationError("Invalid upload path.");
   }
 
   await fs.mkdir(path.dirname(absolutePath), { recursive: true });

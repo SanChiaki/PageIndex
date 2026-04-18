@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { appConfig } from "@/lib/config";
-import { getDocumentPages } from "@/lib/repos/document-store";
+import { getDocumentPages, InvalidPagesFilterError } from "@/lib/repos/document-store";
 
 export async function GET(
   request: NextRequest,
@@ -13,9 +13,9 @@ export async function GET(
       pages: getDocumentPages(appConfig.dbPath, documentId, pages),
     });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Invalid pages filter." },
-      { status: 400 },
-    );
+    if (error instanceof InvalidPagesFilterError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    return NextResponse.json({ error: "Failed to read document pages." }, { status: 500 });
   }
 }

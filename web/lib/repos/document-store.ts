@@ -52,6 +52,8 @@ export function createDocumentRecord(
   };
 }
 
+export class InvalidPagesFilterError extends Error {}
+
 function parsePagesFilter(pages: string | null) {
   if (!pages) return null;
 
@@ -60,29 +62,20 @@ function parsePagesFilter(pages: string | null) {
 
   const parts = trimmed.split(",").map((part) => part.trim()).filter(Boolean);
   if (parts.length > 100) {
-    throw new Error("Too many page selectors.");
+    throw new InvalidPagesFilterError("Too many page selectors.");
   }
 
   const selected = new Set<number>();
   for (const token of parts) {
-    if (token.includes("-")) {
-      if (token.indexOf("-") !== token.lastIndexOf("-")) {
-        throw new Error("Invalid page range.");
-      }
-
-      const [startText, endText] = token.split("-", 2);
-      const start = Number(startText);
-      const end = Number(endText);
-      if (
-        !Number.isInteger(start) ||
-        !Number.isInteger(end) ||
-        start < 1 ||
-        end < start
-      ) {
-        throw new Error("Invalid page range.");
+    const rangeMatch = token.match(/^(\d+)-(\d+)$/);
+    if (rangeMatch) {
+      const start = Number.parseInt(rangeMatch[1], 10);
+      const end = Number.parseInt(rangeMatch[2], 10);
+      if (start < 1 || end < start) {
+        throw new InvalidPagesFilterError("Invalid page range.");
       }
       if (end - start + 1 > 1000) {
-        throw new Error("Page range too large.");
+        throw new InvalidPagesFilterError("Page range too large.");
       }
 
       for (let page = start; page <= end; page += 1) {
@@ -91,9 +84,13 @@ function parsePagesFilter(pages: string | null) {
       continue;
     }
 
-    const page = Number(token);
-    if (!Number.isInteger(page) || page < 1) {
-      throw new Error("Invalid page number.");
+    if (!/^\d+$/.test(token)) {
+      throw new InvalidPagesFilterError("Invalid page selector.");
+    }
+
+    const page = Number.parseInt(token, 10);
+    if (page < 1) {
+      throw new InvalidPagesFilterError("Invalid page number.");
     }
     selected.add(page);
   }

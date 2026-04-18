@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ProjectScopePicker } from "@/components/project-scope-picker";
 
@@ -21,6 +21,7 @@ export function ChatComposer({
   const [activeProjectIds, setActiveProjectIds] = useState(selectedProjectIds);
   const [sending, setSending] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const sendInFlightRef = useRef(false);
 
   useEffect(() => {
     setActiveProjectIds(selectedProjectIds);
@@ -41,10 +42,11 @@ export function ChatComposer({
       : "Ask a question about the selected projects...";
 
   async function handleSend() {
-    if (!canSend) {
+    if (sendInFlightRef.current || !canSend) {
       return;
     }
 
+    sendInFlightRef.current = true;
     setSending(true);
     setErrorMessage("");
     try {
@@ -90,6 +92,7 @@ export function ChatComposer({
     } catch {
       setErrorMessage(SEND_ERROR_MESSAGE);
     } finally {
+      sendInFlightRef.current = false;
       setSending(false);
     }
   }

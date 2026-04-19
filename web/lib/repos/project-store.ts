@@ -7,16 +7,25 @@ function open(dbPath: string) {
   return db;
 }
 
+function normalizeProjectName(name: string) {
+  const trimmedName = name.trim();
+  if (trimmedName.length === 0 || trimmedName.length > 120) {
+    throw new Error("Project name must be between 1 and 120 characters.");
+  }
+  return trimmedName;
+}
+
 export function createProject(
   dbPath: string,
   input: { ownerUserId: string; name: string },
 ) {
   const db = open(dbPath);
   const now = new Date().toISOString();
+  const normalizedName = normalizeProjectName(input.name);
   const row = {
     id: `proj_${crypto.randomUUID()}`,
     owner_user_id: input.ownerUserId,
-    name: input.name.trim(),
+    name: normalizedName,
     created_at: now,
     updated_at: now,
   };
@@ -105,10 +114,17 @@ export function updateProjectName(
   dbPath: string,
   input: { ownerUserId: string; projectId: string; name: string },
 ) {
-  const db = open(dbPath);
-  const trimmedName = input.name.trim();
-  const now = new Date().toISOString();
+  const normalizedName = normalizeProjectName(input.name);
+  const currentProject = getProjectById(dbPath, input.projectId, input.ownerUserId);
+  if (!currentProject) {
+    return null;
+  }
+  if (currentProject.name === normalizedName) {
+    return currentProject;
+  }
 
+  const db = open(dbPath);
+  const now = new Date().toISOString();
   const result = db
     .prepare(
       `UPDATE projects
@@ -117,7 +133,7 @@ export function updateProjectName(
           AND owner_user_id = ?
           AND deleted_at IS NULL`,
     )
-    .run(trimmedName, now, input.projectId, input.ownerUserId);
+    .run(normalizedName, now, input.projectId, input.ownerUserId);
 
   db.close();
   if (result.changes === 0) {

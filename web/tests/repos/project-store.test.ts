@@ -110,4 +110,52 @@ describe("project and document stores", () => {
     expect(renamed).toBeNull();
     expect(getProjectById(dbPath, project.id, "user_other")?.name).toBe("Gamma");
   });
+
+  it("rejects invalid project names in the repo layer", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-store-invalid-name-"));
+    tempDirs.push(dir);
+    const dbPath = path.join(dir, "app.db");
+    migrateDatabase(dbPath);
+
+    const project = createProject(dbPath, {
+      ownerUserId: "user_demo",
+      name: "Alpha",
+    });
+
+    expect(() =>
+      createProject(dbPath, {
+        ownerUserId: "user_demo",
+        name: "   ",
+      }),
+    ).toThrow("Project name must be between 1 and 120 characters.");
+
+    expect(() =>
+      updateProjectName(dbPath, {
+        ownerUserId: "user_demo",
+        projectId: project.id,
+        name: "x".repeat(121),
+      }),
+    ).toThrow("Project name must be between 1 and 120 characters.");
+  });
+
+  it("does not update the timestamp when a normalized rename is unchanged", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-store-rename-noop-"));
+    tempDirs.push(dir);
+    const dbPath = path.join(dir, "app.db");
+    migrateDatabase(dbPath);
+
+    const project = createProject(dbPath, {
+      ownerUserId: "user_demo",
+      name: "Alpha",
+    });
+
+    const renamed = updateProjectName(dbPath, {
+      ownerUserId: "user_demo",
+      projectId: project.id,
+      name: "  Alpha  ",
+    });
+
+    expect(renamed?.name).toBe("Alpha");
+    expect(renamed?.updatedAt).toBe(project.updatedAt);
+  });
 });

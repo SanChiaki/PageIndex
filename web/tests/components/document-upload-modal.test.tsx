@@ -14,6 +14,14 @@ vi.mock("next/navigation", () => ({
   useRouter: () => routerMocks,
 }));
 
+function getFileInput() {
+  const input = document.querySelector('input[type="file"]');
+  if (!(input instanceof HTMLInputElement)) {
+    throw new Error("Expected file input to be rendered");
+  }
+  return input;
+}
+
 afterEach(() => {
   routerMocks.refresh.mockClear();
   vi.unstubAllGlobals();
@@ -21,11 +29,22 @@ afterEach(() => {
 });
 
 describe("DocumentUploadModal", () => {
-  it("shows file count and file names for multiple selected PDFs", async () => {
+  it("renders the modal at the document root instead of inside the trigger container", () => {
     const { container } = render(<DocumentUploadModal projectId="proj_1" />);
 
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
-    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+
+    const heading = screen.getByText("Upload PDF");
+
+    expect(document.body).toContainElement(heading);
+    expect(container).not.toContainElement(heading);
+  });
+
+  it("shows file count and file names for multiple selected PDFs", async () => {
+    render(<DocumentUploadModal projectId="proj_1" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+    const input = getFileInput();
     const alpha = new File([Buffer.from("%PDF-1.7\nalpha")], "alpha.pdf", {
       type: "application/pdf",
     });
@@ -66,10 +85,10 @@ describe("DocumentUploadModal", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const { container } = render(<DocumentUploadModal projectId="proj_1" />);
+    render(<DocumentUploadModal projectId="proj_1" />);
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
 
-    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const input = getFileInput();
     const alpha = new File([Buffer.from("%PDF-1.7\nalpha")], "alpha.pdf", {
       type: "application/pdf",
     });
@@ -121,10 +140,10 @@ describe("DocumentUploadModal", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const { container } = render(<DocumentUploadModal projectId="proj_1" />);
+    render(<DocumentUploadModal projectId="proj_1" />);
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
 
-    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const input = getFileInput();
     const alpha = new File([Buffer.from("%PDF-1.7\nalpha")], "alpha.pdf", {
       type: "application/pdf",
     });

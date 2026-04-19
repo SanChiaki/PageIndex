@@ -1,9 +1,9 @@
-import { revalidatePath } from "next/cache";
 import { AppShell } from "@/components/app-shell";
+import { ProjectCreateForm } from "@/components/project-create-form";
 import { ProjectGrid } from "@/components/project-grid";
 import { appConfig } from "@/lib/config";
 import { listConversations } from "@/lib/repos/conversation-store";
-import { createProject, listProjects } from "@/lib/repos/project-store";
+import { listProjects } from "@/lib/repos/project-store";
 
 const demoUserId = "user_demo";
 
@@ -19,16 +19,6 @@ export default async function ProjectsPage({
   const visibleProjects = query
     ? projects.filter((project) => project.name.toLowerCase().includes(query))
     : projects;
-
-  async function createProjectAction() {
-    "use server";
-    const nameSeed = new Date().toISOString().slice(5, 16).replace("T", " ");
-    createProject(appConfig.dbPath, {
-      ownerUserId: demoUserId,
-      name: `Project ${nameSeed}`,
-    });
-    revalidatePath("/projects");
-  }
 
   return (
     <AppShell conversations={conversations}>
@@ -46,15 +36,7 @@ export default async function ProjectsPage({
                 Organize documents by project, then use project scope in chat.
               </p>
             </div>
-
-            <form action={createProjectAction}>
-              <button
-                type="submit"
-                className="rounded-2xl border border-[var(--pi-border-strong)] bg-[linear-gradient(135deg,rgba(64,126,255,0.9),rgba(49,92,198,0.88))] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_14px_34px_rgba(52,112,255,0.28)] transition hover:brightness-105"
-              >
-                New Project
-              </button>
-            </form>
+            <ProjectCreateForm />
           </div>
           <form className="mt-6">
             <label htmlFor="project-search" className="sr-only">

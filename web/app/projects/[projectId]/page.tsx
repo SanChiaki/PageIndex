@@ -1,5 +1,7 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
+import { ProjectRenameControl } from "@/components/project-rename-control";
 import { DocumentTable } from "@/components/document-table";
 import { DocumentUploadModal } from "@/components/document-upload-modal";
 import { appConfig } from "@/lib/config";
@@ -52,7 +54,10 @@ export default async function ProjectDetailPage({
                 Upload PDFs and review indexing status before using this project in chat.
               </p>
             </div>
-            <DocumentUploadModal projectId={projectId} />
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <ProjectRenameControl projectId={projectId} initialName={project.name} />
+              <DocumentUploadModal projectId={projectId} />
+            </div>
           </div>
           <form className="mt-6">
             <label htmlFor="document-search" className="sr-only">

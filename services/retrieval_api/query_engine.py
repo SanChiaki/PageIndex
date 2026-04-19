@@ -1,11 +1,19 @@
 import json
+from functools import lru_cache
 from typing import Any
 
+from pageindex.utils import ConfigLoader
 from services.common.sqlite_store import open_db
 from services.retrieval_api.select_documents import select_candidate_documents
 
 MAX_PAGE_RANGE_SIZE = 1000
 MAX_PAGE_SELECTION_SIZE = 1000
+
+
+@lru_cache(maxsize=1)
+def _get_retrieval_model() -> str | None:
+    config = ConfigLoader().load()
+    return getattr(config, "retrieve_model", None) or getattr(config, "model", None)
 
 
 def build_citation(project: dict[str, str], document: dict[str, str], pages: str) -> dict:
@@ -127,7 +135,7 @@ Return JSON only:
 {{"pages": "3-5"}}
 """
     try:
-        parsed = extract_json(llm_completion(model=None, prompt=prompt))
+        parsed = extract_json(llm_completion(model=_get_retrieval_model(), prompt=prompt))
     except Exception:
         return fallback
 
@@ -166,7 +174,7 @@ Evidence:
 Return only the answer text.
 """
     try:
-        answer = llm_completion(model=None, prompt=prompt).strip()
+        answer = llm_completion(model=_get_retrieval_model(), prompt=prompt).strip()
     except Exception:
         answer = ""
     return answer or "I could not generate an answer from the selected documents."

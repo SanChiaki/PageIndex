@@ -1,7 +1,9 @@
 import json
 import sqlite3
 from pathlib import Path
+from types import SimpleNamespace
 
+from services.retrieval_api import query_engine
 from services.retrieval_api.query_engine import answer_question, build_citation
 
 
@@ -220,3 +222,48 @@ def test_answer_question_falls_back_when_llm_pages_range_is_oversized(
 
     assert result["answer"] == "answer with fallback"
     assert result["citations"][0]["pages"] == "1-2"
+
+
+def test_retrieval_llm_uses_configured_model(monkeypatch):
+    monkeypatch.setattr(
+        "pageindex.utils.ConfigLoader.load",
+        lambda self, user_opt=None: SimpleNamespace(
+            model="gpt-base",
+            retrieve_model="gpt-retrieval",
+        ),
+    )
+    monkeypatch.setattr(
+        "pageindex.retrieve.get_document_structure",
+        lambda _document_map, _document_id: '{"nodes":[]}',
+    )
+
+    seen_models: list[str | None] = []
+
+    def fake_llm_completion(model, prompt, chat_history=None, return_finish_reason=False):
+        seen_models.append(model)
+        if "Return JSON only" in prompt:
+            return '{"pages": "2"}'
+        return "final answer"
+
+    monkeypatch.setattr("pageindex.utils.llm_completion", fake_llm_completion)
+
+    document = {
+        "id": "doc_1",
+        "file_name": "alpha.pdf",
+        "doc_description": "Alpha",
+        "structure": [{"title": "Intro"}],
+        "pages": [
+            {"page": 1, "content": "intro"},
+            {"page": 2, "content": "details"},
+        ],
+    }
+
+    pages = query_engine.choose_page_window("what is on page 2", document)
+    answer = query_engine._generate_answer(
+        "what is on page 2",
+        [{"document": "alpha.pdf", "pages": "2", "evidence": [{"page": 2, "content": "details"}]}],
+    )
+
+    assert pages == "2"
+    assert answer == "final answer"
+    assert seen_models == ["gpt-retrieval", "gpt-retrieval"]

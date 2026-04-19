@@ -100,3 +100,29 @@ export function getProjectById(
       }
     : null;
 }
+
+export function updateProjectName(
+  dbPath: string,
+  input: { ownerUserId: string; projectId: string; name: string },
+) {
+  const db = open(dbPath);
+  const trimmedName = input.name.trim();
+  const now = new Date().toISOString();
+
+  const result = db
+    .prepare(
+      `UPDATE projects
+          SET name = ?, updated_at = ?
+        WHERE id = ?
+          AND owner_user_id = ?
+          AND deleted_at IS NULL`,
+    )
+    .run(trimmedName, now, input.projectId, input.ownerUserId);
+
+  db.close();
+  if (result.changes === 0) {
+    return null;
+  }
+
+  return getProjectById(dbPath, input.projectId, input.ownerUserId);
+}

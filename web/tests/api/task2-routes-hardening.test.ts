@@ -30,6 +30,10 @@ function mockConfig(dbPath: string, uploadRoot: string) {
 afterEach(() => {
   vi.resetModules();
   vi.unmock("@/lib/config");
+  vi.unmock("@/lib/repos/document-store");
+  vi.unmock("@/lib/repos/job-store");
+  vi.unmock("@/lib/repos/project-store");
+  vi.unmock("@/lib/storage/local-files");
   while (tempDirs.length > 0) {
     fs.rmSync(tempDirs.pop()!, { recursive: true, force: true });
   }
@@ -50,6 +54,67 @@ describe("task2 route hardening", () => {
     );
 
     expect(response.status).toBe(400);
+  });
+
+  it("renames a project through the detail route", async () => {
+    const { dir, dbPath } = makeTempDb();
+    mockConfig(dbPath, path.join(dir, "uploads"));
+    const project = createProject(dbPath, {
+      ownerUserId: "user_demo",
+      name: "Alpha",
+    });
+
+    const { PATCH } = await import("@/app/api/projects/[projectId]/route");
+    const response = await PATCH(
+      new Request(`http://localhost/api/projects/${project.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "Beta Launch" }),
+      }),
+      { params: Promise.resolve({ projectId: project.id }) },
+    );
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json.name).toBe("Beta Launch");
+  });
+
+  it("returns 400 for invalid project rename payload", async () => {
+    const { dir, dbPath } = makeTempDb();
+    mockConfig(dbPath, path.join(dir, "uploads"));
+    const project = createProject(dbPath, {
+      ownerUserId: "user_demo",
+      name: "Alpha",
+    });
+
+    const { PATCH } = await import("@/app/api/projects/[projectId]/route");
+    const response = await PATCH(
+      new Request(`http://localhost/api/projects/${project.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "   " }),
+      }),
+      { params: Promise.resolve({ projectId: project.id }) },
+    );
+
+    expect(response.status).toBe(400);
+  });
+
+  it("returns 404 when renaming a missing project", async () => {
+    const { dir, dbPath } = makeTempDb();
+    mockConfig(dbPath, path.join(dir, "uploads"));
+
+    const { PATCH } = await import("@/app/api/projects/[projectId]/route");
+    const response = await PATCH(
+      new Request("http://localhost/api/projects/proj_missing", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "Beta Launch" }),
+      }),
+      { params: Promise.resolve({ projectId: "proj_missing" }) },
+    );
+
+    expect(response.status).toBe(404);
   });
 
   it("returns 400 for invalid conversation project payload", async () => {
@@ -115,10 +180,9 @@ describe("task2 route hardening", () => {
       }),
     );
     const response = await POST(
-      new Request("http://localhost/api/upload", {
-        method: "POST",
-        body: form,
-      }) as any,
+      {
+        formData: async () => form,
+      } as Pick<Request, "formData"> as any,
       { params: Promise.resolve({ projectId: project.id }) },
     );
 
@@ -175,12 +239,12 @@ describe("task2 route hardening", () => {
         type: "application/pdf",
       }),
     );
+    const request = {
+      formData: async () => form,
+    } as Pick<Request, "formData"> as any;
 
     const response = await POST(
-      new Request("http://localhost/api/upload", {
-        method: "POST",
-        body: form,
-      }) as any,
+      request,
       { params: Promise.resolve({ projectId: project.id }) },
     );
     const json = await response.json();
@@ -205,6 +269,172 @@ describe("task2 route hardening", () => {
     ]);
     expect(documents).toEqual([{ file_name: "alpha.pdf" }]);
     expect(jobs.count).toBe(1);
+  });
+
+  it("returns 400 with an error when every file in the batch fails", async () => {
+    const { dir, dbPath } = makeTempDb();
+    mockConfig(dbPath, path.join(dir, "uploads"));
+    const project = createProject(dbPath, {
+      ownerUserId: "user_demo",
+      name: "Alpha",
+    });
+
+    const { POST } = await import(
+      "@/app/api/projects/[projectId]/documents/upload/route"
+    );
+    const form = new FormData();
+    form.append(
+      "files",
+      new File([Buffer.from("not-a-pdf")], "broken.pdf", {
+        type: "application/pdf",
+      }),
+    );
+    form.append(
+      "files",
+      new File([Buffer.from("%PDF-1.7\nbody")], "notes.txt", {
+        type: "text/plain",
+      }),
+    );
+
+    const response = await POST(
+      {
+        formData: async () => form,
+      } as Pick<Request, "formData"> as any,
+      { params: Promise.resolve({ projectId: project.id }) },
+    );
+    const json = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(json.error).toBe("All uploads failed.");
+    expect(json.uploaded).toEqual([]);
+    expect(json.failed).toEqual([
+      {
+        fileName: "broken.pdf",
+        error: "Uploaded file is not a valid PDF.",
+      },
+      {
+        fileName: "notes.txt",
+        error: "Only PDF uploads are supported.",
+      },
+    ]);
+  });
+
+  it("continues processing the batch when queuing one document fails", async () => {
+    const { dir, dbPath } = makeTempDb();
+    mockConfig(dbPath, path.join(dir, "uploads"));
+    const project = createProject(dbPath, {
+      ownerUserId: "user_demo",
+      name: "Alpha",
+    });
+
+    vi.doMock("@/lib/repos/job-store", async () => {
+      const actual = await vi.importActual<typeof import("@/lib/repos/job-store")>(
+        "@/lib/repos/job-store"
+      );
+      let calls = 0;
+
+      return {
+        ...actual,
+        createIndexJob: (currentDbPath: string, documentId: string) => {
+          calls += 1;
+          if (calls === 1) {
+            throw new Error("queue unavailable");
+          }
+          return actual.createIndexJob(currentDbPath, documentId);
+        },
+      };
+    });
+
+    const { POST } = await import(
+      "@/app/api/projects/[projectId]/documents/upload/route"
+    );
+    const form = new FormData();
+    form.append(
+      "files",
+      new File([Buffer.from("%PDF-1.7\nfirst")], "first.pdf", {
+        type: "application/pdf",
+      }),
+    );
+    form.append(
+      "files",
+      new File([Buffer.from("%PDF-1.7\nsecond")], "second.pdf", {
+        type: "application/pdf",
+      }),
+    );
+
+    const response = await POST(
+      new Request("http://localhost/api/upload", {
+        method: "POST",
+        body: form,
+      }) as any,
+      { params: Promise.resolve({ projectId: project.id }) },
+    );
+    const json = await response.json();
+
+    const db = new Database(dbPath, { readonly: true });
+    const documents = db
+      .prepare(`SELECT file_name FROM documents ORDER BY file_name ASC`)
+      .all() as Array<{ file_name: string }>;
+    const jobs = db.prepare(`SELECT COUNT(*) AS count FROM jobs`).get() as {
+      count: number;
+    };
+    db.close();
+
+    const projectUploadDir = path.join(dir, "uploads", project.id);
+    const storedFiles = fs.existsSync(projectUploadDir)
+      ? fs.readdirSync(projectUploadDir)
+      : [];
+
+    expect(response.status).toBe(201);
+    expect(json.uploaded).toHaveLength(1);
+    expect(json.uploaded[0].fileName).toBe("second.pdf");
+    expect(json.failed).toEqual([
+      {
+        fileName: "first.pdf",
+        error: "Failed to queue document for indexing.",
+      },
+    ]);
+    expect(documents).toEqual([{ file_name: "second.pdf" }]);
+    expect(jobs.count).toBe(1);
+    expect(storedFiles).toHaveLength(1);
+  });
+
+  it("stores a fallback file name when the uploaded file name is empty", async () => {
+    const { dir, dbPath } = makeTempDb();
+    mockConfig(dbPath, path.join(dir, "uploads"));
+    const project = createProject(dbPath, {
+      ownerUserId: "user_demo",
+      name: "Alpha",
+    });
+
+    const { POST } = await import(
+      "@/app/api/projects/[projectId]/documents/upload/route"
+    );
+    const form = new FormData();
+    form.set(
+      "file",
+      new File([Buffer.from("%PDF-1.7\nbody")], "", {
+        type: "application/pdf",
+      }),
+    );
+
+    const response = await POST(
+      {
+        formData: async () => form,
+      } as Pick<Request, "formData"> as any,
+      { params: Promise.resolve({ projectId: project.id }) },
+    );
+    const json = await response.json();
+
+    const db = new Database(dbPath, { readonly: true });
+    const documents = db
+      .prepare(`SELECT file_name FROM documents ORDER BY file_name ASC`)
+      .all() as Array<{ file_name: string }>;
+    db.close();
+
+    expect(response.status).toBe(201);
+    expect(json.uploaded[0].fileName).toBe("unknown.pdf");
+    expect(documents).toEqual([{ file_name: "unknown.pdf" }]);
   });
 
   it("returns 404 when reindexing a missing document", async () => {

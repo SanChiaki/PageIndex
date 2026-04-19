@@ -1,3 +1,5 @@
+import fs from "node:fs/promises";
+import Database from "better-sqlite3";
 import { NextRequest, NextResponse } from "next/server";
 import { appConfig } from "@/lib/config";
 import { createDocumentRecord } from "@/lib/repos/document-store";
@@ -22,6 +24,23 @@ type FailedItem = {
 async function hasPdfSignature(file: File) {
   const header = Buffer.from(await file.slice(0, 5).arrayBuffer()).toString("utf8");
   return header === "%PDF-";
+}
+
+async function removeStoredFile(storagePath: string) {
+  await fs.rm(storagePath, { force: true });
+}
+
+function deleteDocumentArtifacts(documentId: string) {
+  const db = new Database(appConfig.dbPath);
+  db.pragma("foreign_keys = ON");
+
+  try {
+    db.prepare(`DELETE FROM jobs WHERE document_id = ?`).run(documentId);
+    db.prepare(`DELETE FROM document_indexes WHERE document_id = ?`).run(documentId);
+    db.prepare(`DELETE FROM documents WHERE id = ?`).run(documentId);
+  } finally {
+    db.close();
+  }
 }
 
 function getFilesFromForm(form: FormData) {
@@ -58,7 +77,7 @@ export async function POST(
 
   const uploaded: UploadedItem[] = [];
   const failed: FailedItem[] = [];
-  let sawUnexpectedStorageError = false;
+  let sawUnexpectedServerError = false;
 
   for (const file of files) {
     const fileName = file.name || "unknown.pdf";
@@ -80,20 +99,38 @@ export async function POST(
         failed.push({ fileName, error: error.message });
         continue;
       }
-      sawUnexpectedStorageError = true;
+      sawUnexpectedServerError = true;
       failed.push({ fileName, error: "Failed to save uploaded file." });
       continue;
     }
 
-    const document = createDocumentRecord(appConfig.dbPath, {
-      ownerUserId: demoUserId,
-      projectId,
-      fileName: file.name,
-      storagePath: stored.storagePath,
-      mimeType: file.type,
-      fileSize: stored.fileSize,
-    });
-    const job = createIndexJob(appConfig.dbPath, document.id);
+    let document;
+    try {
+      document = createDocumentRecord(appConfig.dbPath, {
+        ownerUserId: demoUserId,
+        projectId,
+        fileName,
+        storagePath: stored.storagePath,
+        mimeType: file.type,
+        fileSize: stored.fileSize,
+      });
+    } catch {
+      sawUnexpectedServerError = true;
+      await removeStoredFile(stored.storagePath).catch(() => undefined);
+      failed.push({ fileName, error: "Failed to save document metadata." });
+      continue;
+    }
+
+    let job;
+    try {
+      job = createIndexJob(appConfig.dbPath, document.id);
+    } catch {
+      sawUnexpectedServerError = true;
+      deleteDocumentArtifacts(document.id);
+      await removeStoredFile(stored.storagePath).catch(() => undefined);
+      failed.push({ fileName, error: "Failed to queue document for indexing." });
+      continue;
+    }
 
     uploaded.push({
       documentId: document.id,
@@ -104,11 +141,16 @@ export async function POST(
   }
 
   if (uploaded.length === 0) {
-    // Preserve prior semantics: unexpected storage errors remain 5xx.
-    if (sawUnexpectedStorageError) {
-      return NextResponse.json({ uploaded, failed }, { status: 500 });
+    if (sawUnexpectedServerError) {
+      return NextResponse.json(
+        { error: "Upload processing failed.", uploaded, failed },
+        { status: 500 },
+      );
     }
-    return NextResponse.json({ uploaded, failed }, { status: 400 });
+    return NextResponse.json(
+      { error: "All uploads failed.", uploaded, failed },
+      { status: 400 },
+    );
   }
 
   return NextResponse.json({ uploaded, failed }, { status: 201 });

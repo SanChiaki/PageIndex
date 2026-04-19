@@ -125,6 +125,88 @@ describe("task2 route hardening", () => {
     expect(response.status).toBe(400);
   });
 
+  it("returns 400 when upload request contains no files", async () => {
+    const { dir, dbPath } = makeTempDb();
+    mockConfig(dbPath, path.join(dir, "uploads"));
+    const project = createProject(dbPath, {
+      ownerUserId: "user_demo",
+      name: "Alpha",
+    });
+
+    const { POST } = await import(
+      "@/app/api/projects/[projectId]/documents/upload/route"
+    );
+    const response = await POST(
+      new Request("http://localhost/api/upload", {
+        method: "POST",
+        body: new FormData(),
+      }) as any,
+      { params: Promise.resolve({ projectId: project.id }) },
+    );
+    const json = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(json.error).toBe("No files were provided.");
+    expect(json.uploaded).toEqual([]);
+    expect(json.failed).toEqual([]);
+  });
+
+  it("supports partial success for batch uploads", async () => {
+    const { dir, dbPath } = makeTempDb();
+    mockConfig(dbPath, path.join(dir, "uploads"));
+    const project = createProject(dbPath, {
+      ownerUserId: "user_demo",
+      name: "Alpha",
+    });
+
+    const { POST } = await import(
+      "@/app/api/projects/[projectId]/documents/upload/route"
+    );
+    const form = new FormData();
+    form.append(
+      "files",
+      new File([Buffer.from("%PDF-1.7\nvalid")], "alpha.pdf", {
+        type: "application/pdf",
+      }),
+    );
+    form.append(
+      "files",
+      new File([Buffer.from("not-a-pdf")], "broken.pdf", {
+        type: "application/pdf",
+      }),
+    );
+
+    const response = await POST(
+      new Request("http://localhost/api/upload", {
+        method: "POST",
+        body: form,
+      }) as any,
+      { params: Promise.resolve({ projectId: project.id }) },
+    );
+    const json = await response.json();
+
+    const db = new Database(dbPath, { readonly: true });
+    const documents = db
+      .prepare(`SELECT file_name FROM documents ORDER BY file_name ASC`)
+      .all() as Array<{ file_name: string }>;
+    const jobs = db.prepare(`SELECT COUNT(*) AS count FROM jobs`).get() as {
+      count: number;
+    };
+    db.close();
+
+    expect(response.status).toBe(201);
+    expect(json.uploaded).toHaveLength(1);
+    expect(json.uploaded[0].fileName).toBe("alpha.pdf");
+    expect(json.failed).toEqual([
+      {
+        fileName: "broken.pdf",
+        error: "Uploaded file is not a valid PDF.",
+      },
+    ]);
+    expect(documents).toEqual([{ file_name: "alpha.pdf" }]);
+    expect(jobs.count).toBe(1);
+  });
+
   it("returns 404 when reindexing a missing document", async () => {
     const { dir, dbPath } = makeTempDb();
     mockConfig(dbPath, path.join(dir, "uploads"));

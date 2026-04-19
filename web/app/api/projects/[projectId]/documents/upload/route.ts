@@ -7,9 +7,33 @@ import { saveUploadedPdf, UploadValidationError } from "@/lib/storage/local-file
 
 const demoUserId = "user_demo";
 
+type UploadedItem = {
+  documentId: string;
+  fileName: string;
+  status: string;
+  jobId: string;
+};
+
+type FailedItem = {
+  fileName: string;
+  error: string;
+};
+
 async function hasPdfSignature(file: File) {
   const header = Buffer.from(await file.slice(0, 5).arrayBuffer()).toString("utf8");
   return header === "%PDF-";
+}
+
+function getFilesFromForm(form: FormData) {
+  const batchFiles = form
+    .getAll("files")
+    .filter((value): value is File => value instanceof File);
+  if (batchFiles.length > 0) {
+    return batchFiles;
+  }
+
+  const legacyFile = form.get("file");
+  return legacyFile instanceof File ? [legacyFile] : [];
 }
 
 export async function POST(
@@ -23,46 +47,69 @@ export async function POST(
   }
 
   const form = await request.formData();
-  const file = form.get("file");
 
-  if (!(file instanceof File) || file.type !== "application/pdf") {
-    return NextResponse.json({ error: "Only PDF uploads are supported." }, { status: 400 });
-  }
-  if (!(await hasPdfSignature(file))) {
-    return NextResponse.json({ error: "Uploaded file is not a valid PDF." }, { status: 400 });
+  const files = getFilesFromForm(form);
+  if (files.length === 0) {
+    return NextResponse.json(
+      { error: "No files were provided.", uploaded: [], failed: [] },
+      { status: 400 },
+    );
   }
 
-  let stored: { storagePath: string; fileSize: number };
-  try {
-    stored = await saveUploadedPdf(projectId, file);
-  } catch (error) {
-    if (error instanceof UploadValidationError) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+  const uploaded: UploadedItem[] = [];
+  const failed: FailedItem[] = [];
+  let sawUnexpectedStorageError = false;
+
+  for (const file of files) {
+    const fileName = file.name || "unknown.pdf";
+
+    if (file.type !== "application/pdf") {
+      failed.push({ fileName, error: "Only PDF uploads are supported." });
+      continue;
     }
-    return NextResponse.json({ error: "Failed to save uploaded file." }, { status: 500 });
+    if (!(await hasPdfSignature(file))) {
+      failed.push({ fileName, error: "Uploaded file is not a valid PDF." });
+      continue;
+    }
+
+    let stored: { storagePath: string; fileSize: number };
+    try {
+      stored = await saveUploadedPdf(projectId, file);
+    } catch (error) {
+      if (error instanceof UploadValidationError) {
+        failed.push({ fileName, error: error.message });
+        continue;
+      }
+      sawUnexpectedStorageError = true;
+      failed.push({ fileName, error: "Failed to save uploaded file." });
+      continue;
+    }
+
+    const document = createDocumentRecord(appConfig.dbPath, {
+      ownerUserId: demoUserId,
+      projectId,
+      fileName: file.name,
+      storagePath: stored.storagePath,
+      mimeType: file.type,
+      fileSize: stored.fileSize,
+    });
+    const job = createIndexJob(appConfig.dbPath, document.id);
+
+    uploaded.push({
+      documentId: document.id,
+      fileName: document.fileName,
+      status: document.status,
+      jobId: job.id,
+    });
   }
 
-  const document = createDocumentRecord(appConfig.dbPath, {
-    ownerUserId: demoUserId,
-    projectId,
-    fileName: file.name,
-    storagePath: stored.storagePath,
-    mimeType: file.type,
-    fileSize: stored.fileSize,
-  });
-  const job = createIndexJob(appConfig.dbPath, document.id);
+  if (uploaded.length === 0) {
+    // Preserve prior semantics: unexpected storage errors remain 5xx.
+    if (sawUnexpectedStorageError) {
+      return NextResponse.json({ uploaded, failed }, { status: 500 });
+    }
+    return NextResponse.json({ uploaded, failed }, { status: 400 });
+  }
 
-  return NextResponse.json(
-    {
-      uploaded: [
-        {
-          documentId: document.id,
-          fileName: document.fileName,
-          status: document.status,
-          jobId: job.id,
-        },
-      ],
-    },
-    { status: 201 },
-  );
+  return NextResponse.json({ uploaded, failed }, { status: 201 });
 }

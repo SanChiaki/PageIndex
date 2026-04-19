@@ -63,4 +63,44 @@ describe("ProjectCreateForm", () => {
     expect(routerMocks.refresh).toHaveBeenCalledTimes(1);
     expect(screen.getByPlaceholderText(/enter project name/i)).toHaveValue("");
   });
+
+  it("shows the API error when project creation fails", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      json: async () => ({ error: "Project name already exists." }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ProjectCreateForm />);
+
+    fireEvent.change(screen.getByPlaceholderText(/enter project name/i), {
+      target: { value: "Alpha" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /create project/i }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    expect(screen.getByText("Project name already exists.")).toBeInTheDocument();
+    expect(routerMocks.refresh).not.toHaveBeenCalled();
+    expect(screen.getByPlaceholderText(/enter project name/i)).toHaveValue("Alpha");
+  });
+
+  it("shows a generic error when project creation throws", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error("network down"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ProjectCreateForm />);
+
+    fireEvent.change(screen.getByPlaceholderText(/enter project name/i), {
+      target: { value: "Alpha" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /create project/i }));
+
+    expect(
+      await screen.findByText("Unable to create project. Please try again."),
+    ).toBeInTheDocument();
+    expect(routerMocks.refresh).not.toHaveBeenCalled();
+  });
 });

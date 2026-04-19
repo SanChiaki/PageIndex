@@ -45,4 +45,33 @@ describe("ProjectsPage", () => {
     expect(screen.getByPlaceholderText(/enter project name/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /create project/i })).toBeInTheDocument();
   });
+
+  it("renders a search no-match state instead of the empty-project copy", async () => {
+    vi.doMock("@/lib/config", () => ({
+      appConfig: { dbPath: "/tmp/test.db" },
+    }));
+    vi.doMock("@/lib/repos/conversation-store", () => ({
+      listConversations: () => [],
+    }));
+    vi.doMock("@/lib/repos/project-store", () => ({
+      listProjects: () => [
+        {
+          id: "proj_alpha",
+          name: "Alpha",
+          documentCount: 1,
+          updatedAt: "2026-04-19T00:00:00.000Z",
+        },
+      ],
+    }));
+    vi.doMock("@/components/app-shell", () => ({
+      AppShell: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+    }));
+
+    const module = await import("@/app/projects/page");
+    render(await module.default({ searchParams: Promise.resolve({ q: "omega" }) }));
+
+    expect(screen.getByText(/no matching projects/i)).toBeInTheDocument();
+    expect(screen.getByText(/omega/i)).toBeInTheDocument();
+    expect(screen.queryByText("No projects yet")).not.toBeInTheDocument();
+  });
 });

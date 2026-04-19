@@ -26,7 +26,15 @@ function formatStatus(status: string) {
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 }
 
-export function DocumentTable({ documents }: { documents: DocumentTableRow[] }) {
+export function DocumentTable({
+  documents,
+  searchQuery,
+}: {
+  documents: DocumentTableRow[];
+  searchQuery?: string;
+}) {
+  const trimmedSearchQuery = searchQuery?.trim() ?? "";
+
   return (
     <div className="overflow-hidden rounded-[1.8rem] border border-[var(--pi-border)] bg-[var(--pi-panel-strong)] backdrop-blur-xl">
       <div className="overflow-x-auto">
@@ -46,7 +54,9 @@ export function DocumentTable({ documents }: { documents: DocumentTableRow[] }) 
                   colSpan={4}
                   className="px-5 py-10 text-center text-sm text-[var(--pi-muted)]"
                 >
-                  No documents found in this project.
+                  {trimmedSearchQuery
+                    ? `No matching documents for "${trimmedSearchQuery}" in this project.`
+                    : "No documents found in this project."}
                 </td>
               </tr>
             ) : (

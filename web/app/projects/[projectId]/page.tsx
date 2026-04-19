@@ -19,7 +19,8 @@ export default async function ProjectDetailPage({
   searchParams: Promise<{ q?: string }>;
 }) {
   const [{ projectId }, search] = await Promise.all([params, searchParams]);
-  const query = (search.q ?? "").trim().toLowerCase();
+  const rawQuery = (search.q ?? "").trim();
+  const query = rawQuery.toLowerCase();
   const conversations = listConversations(appConfig.dbPath, demoUserId);
   const project = getProjectById(appConfig.dbPath, projectId, demoUserId);
 
@@ -74,7 +75,7 @@ export default async function ProjectDetailPage({
           </form>
         </header>
 
-        <DocumentTable documents={visibleDocuments} />
+        <DocumentTable documents={visibleDocuments} searchQuery={rawQuery} />
       </section>
     </AppShell>
   );

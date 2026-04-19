@@ -13,7 +13,8 @@ export default async function ProjectsPage({
   searchParams: Promise<{ q?: string }>;
 }) {
   const params = await searchParams;
-  const query = (params.q ?? "").trim().toLowerCase();
+  const rawQuery = (params.q ?? "").trim();
+  const query = rawQuery.toLowerCase();
   const conversations = listConversations(appConfig.dbPath, demoUserId);
   const projects = listProjects(appConfig.dbPath, demoUserId);
   const visibleProjects = query
@@ -53,7 +54,7 @@ export default async function ProjectsPage({
           </form>
         </header>
 
-        <ProjectGrid projects={visibleProjects} />
+        <ProjectGrid projects={visibleProjects} searchQuery={rawQuery} />
       </section>
     </AppShell>
   );

@@ -8,6 +8,7 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { migrateDatabase } from "@/lib/db/migrate";
+import { createDocumentRecord } from "@/lib/repos/document-store";
 import { createProject } from "@/lib/repos/project-store";
 
 const tempDirs: string[] = [];
@@ -118,5 +119,43 @@ describe("ProjectDetailPage", () => {
     render(view);
 
     expect(screen.getByRole("button", { name: /rename/i })).toBeInTheDocument();
+  });
+
+  it("renders a search no-match state instead of the empty-document copy", async () => {
+    const { dbPath } = makeTempDb();
+    const project = createProject(dbPath, {
+      ownerUserId: "user_demo",
+      name: "Alpha",
+    });
+    createDocumentRecord(dbPath, {
+      ownerUserId: "user_demo",
+      projectId: project.id,
+      fileName: "alpha-spec.pdf",
+      storagePath: "/tmp/alpha-spec.pdf",
+      mimeType: "application/pdf",
+      fileSize: 1024,
+    });
+
+    vi.doMock("@/lib/config", () => ({
+      appConfig: {
+        dbPath,
+        retrievalBaseUrl: "http://127.0.0.1:8001",
+      },
+    }));
+    vi.doMock("@/components/app-shell", () => ({
+      AppShell: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+    }));
+
+    const module = await import("@/app/projects/[projectId]/page");
+    const view = await module.default({
+      params: Promise.resolve({ projectId: project.id }),
+      searchParams: Promise.resolve({ q: "omega" }),
+    });
+
+    render(view);
+
+    expect(screen.getByText(/no matching documents/i)).toBeInTheDocument();
+    expect(screen.getByText(/omega/i)).toBeInTheDocument();
+    expect(screen.queryByText("No documents found in this project.")).not.toBeInTheDocument();
   });
 });

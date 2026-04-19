@@ -29,3 +29,70 @@ def test_select_candidate_documents_limits_results():
 
     selected = select_candidate_documents("cash flow risk", docs, limit=2)
     assert len(selected) == 2
+
+
+def test_select_candidate_documents_uses_llm_description_selection(monkeypatch):
+    docs = [
+        {
+            "id": "doc_scope",
+            "project_id": "proj_1",
+            "file_name": "project-scope.pdf",
+            "doc_description": "Project scope, milestones, and staffing plan.",
+        },
+        {
+            "id": "doc_acceptance",
+            "project_id": "proj_1",
+            "file_name": "acceptance-criteria.pdf",
+            "doc_description": "Acceptance criteria, completion checklist, and review standards.",
+        },
+    ]
+
+    def fake_llm_completion(model, prompt, chat_history=None, return_finish_reason=False):
+        assert model == "gpt-retrieval"
+        assert "这个项目的验收标准是什么？" in prompt
+        assert "acceptance-criteria.pdf" in prompt
+        return '{"thinking":"doc_acceptance matches acceptance criteria","answer":["doc_acceptance"]}'
+
+    monkeypatch.setattr("pageindex.utils.llm_completion", fake_llm_completion)
+
+    selected = select_candidate_documents(
+        "这个项目的验收标准是什么？",
+        docs,
+        limit=2,
+        model="gpt-retrieval",
+    )
+
+    assert [doc["id"] for doc in selected] == ["doc_acceptance"]
+
+
+def test_select_candidate_documents_falls_back_to_keywords_when_llm_response_is_invalid(
+    monkeypatch,
+):
+    docs = [
+        {
+            "id": "doc_1",
+            "project_id": "proj_1",
+            "file_name": "cash-flow.pdf",
+            "doc_description": "Cash flow risk factors and debt covenants",
+        },
+        {
+            "id": "doc_2",
+            "project_id": "proj_1",
+            "file_name": "staffing.pdf",
+            "doc_description": "Team roster and roles",
+        },
+    ]
+
+    monkeypatch.setattr(
+        "pageindex.utils.llm_completion",
+        lambda model, prompt, chat_history=None, return_finish_reason=False: "not-json",
+    )
+
+    selected = select_candidate_documents(
+        "cash flow risk",
+        docs,
+        limit=2,
+        model="gpt-retrieval",
+    )
+
+    assert [doc["id"] for doc in selected] == ["doc_1"]

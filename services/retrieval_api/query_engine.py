@@ -225,7 +225,12 @@ def answer_question(db_path: str, query: str, project_ids: list[str]) -> dict:
             }
         )
 
-    selected = select_candidate_documents(query, docs, limit=5)
+    selected = select_candidate_documents(
+        query,
+        docs,
+        limit=5,
+        model=_get_retrieval_model(),
+    )
     if not selected:
         return {
             "answer": "No ready documents matched the selected projects.",

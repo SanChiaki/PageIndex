@@ -225,6 +225,7 @@ def test_answer_question_falls_back_when_llm_pages_range_is_oversized(
 
 
 def test_retrieval_llm_uses_configured_model(monkeypatch):
+    query_engine._get_retrieval_model.cache_clear()
     monkeypatch.setattr(
         "pageindex.utils.ConfigLoader.load",
         lambda self, user_opt=None: SimpleNamespace(
@@ -267,3 +268,70 @@ def test_retrieval_llm_uses_configured_model(monkeypatch):
     assert pages == "2"
     assert answer == "final answer"
     assert seen_models == ["gpt-retrieval", "gpt-retrieval"]
+
+
+def test_answer_question_uses_description_selection_for_cross_language_query(
+    tmp_path, monkeypatch
+):
+    query_engine._get_retrieval_model.cache_clear()
+    db_path = _seed_retrieval_db(tmp_path)
+    _insert_ready_document(
+        db_path,
+        document_id="doc_acceptance",
+        file_name="acceptance.pdf",
+        doc_description="Acceptance criteria, delivery checklist, and sign-off standards.",
+        structure_json=json.dumps([{"title": "Acceptance"}]),
+        pages_json=json.dumps([{"page": 1, "content": "All deliverables must pass review."}]),
+    )
+    _insert_ready_document(
+        db_path,
+        document_id="doc_schedule",
+        file_name="schedule.pdf",
+        doc_description="Timeline, milestones, and staffing plan.",
+        structure_json=json.dumps([{"title": "Timeline"}]),
+        pages_json=json.dumps([{"page": 1, "content": "Project starts in May."}]),
+    )
+
+    monkeypatch.setattr(
+        "pageindex.utils.ConfigLoader.load",
+        lambda self, user_opt=None: SimpleNamespace(
+            model="gpt-base",
+            retrieve_model="gpt-retrieval",
+        ),
+    )
+
+    seen_models: list[str | None] = []
+
+    def fake_llm_completion(model, prompt, chat_history=None, return_finish_reason=False):
+        seen_models.append(model)
+        assert "这个项目的验收标准是什么？" in prompt
+        return '{"thinking":"doc_acceptance is the acceptance criteria document","answer":["doc_acceptance"]}'
+
+    monkeypatch.setattr("pageindex.utils.llm_completion", fake_llm_completion)
+    monkeypatch.setattr(
+        "services.retrieval_api.query_engine.choose_page_window",
+        lambda _query, _doc: "1",
+    )
+    monkeypatch.setattr(
+        "services.retrieval_api.query_engine._load_page_excerpt",
+        lambda _document, _pages: [{"page": 1, "content": "All deliverables must pass review."}],
+    )
+    monkeypatch.setattr(
+        "services.retrieval_api.query_engine._generate_answer",
+        lambda _query, _blocks: "验收标准包括交付物评审和签收。",
+    )
+
+    result = answer_question(str(db_path), "这个项目的验收标准是什么？", ["proj_1"])
+
+    assert result["answer"] == "验收标准包括交付物评审和签收。"
+    assert result["selectedDocuments"] == [{"documentId": "doc_acceptance"}]
+    assert result["citations"] == [
+        {
+            "projectId": "proj_1",
+            "projectName": "Alpha",
+            "documentId": "doc_acceptance",
+            "documentName": "acceptance.pdf",
+            "pages": "1",
+        }
+    ]
+    assert seen_models == ["gpt-retrieval"]

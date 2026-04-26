@@ -14,22 +14,22 @@ const demoUserId = "user_demo";
 
 const schema = z.object({
   conversationId: z.string().min(1),
-  projectIds: z.array(z.string().min(1)).min(1),
+  projectIds: z.array(z.string().min(1)).default([]),
   message: z.string().trim().min(1),
+  mode: z.enum(["answer", "evidence"]).default("answer"),
 });
+
+function formatEvidenceAnswer(evidenceCount: number) {
+  return `Evidence mode returned ${evidenceCount} evidence ${
+    evidenceCount === 1 ? "item" : "items"
+  }.`;
+}
 
 export async function POST(request: Request) {
   const parsed = schema.safeParse(await request.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json(
       { error: "Invalid request payload.", details: parsed.error.issues },
-      { status: 400 },
-    );
-  }
-
-  if (parsed.data.projectIds.length === 0) {
-    return NextResponse.json(
-      { error: "At least one project must be selected." },
       { status: 400 },
     );
   }
@@ -77,20 +77,29 @@ export async function POST(request: Request) {
     result = await sendRetrievalQuery({
       query: parsed.data.message,
       projectIds: parsed.data.projectIds,
+      mode: parsed.data.mode,
     });
   } catch {
     result = {
       answer: "I ran into a retrieval error. Please try again.",
       citations: [],
       selectedDocuments: [],
+      evidence: [],
     };
   }
+
+  const assistantContent =
+    parsed.data.mode === "evidence"
+      ? formatEvidenceAnswer(result.evidence.length)
+      : result.answer;
+  const assistantAttachments =
+    parsed.data.mode === "evidence" ? result.evidence : result.citations;
 
   appendConversationMessage(appConfig.dbPath, {
     conversationId: parsed.data.conversationId,
     role: "assistant",
-    content: result.answer,
-    citations: result.citations,
+    content: assistantContent,
+    citations: assistantAttachments,
   });
 
   return NextResponse.json(result);

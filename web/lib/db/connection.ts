@@ -3,7 +3,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { appConfig } from "@/lib/config";
 
-let db: Database.Database | null = null;
+let db: InstanceType<typeof Database> | null = null;
 
 export function getDb() {
   if (db) return db;

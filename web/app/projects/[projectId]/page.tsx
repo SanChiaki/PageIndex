@@ -38,7 +38,7 @@ export default async function ProjectDetailPage({
   return (
     <AppShell conversations={conversations}>
       <section className="space-y-8">
-        <header className="rounded-[2rem] border border-[var(--pi-border)] bg-[var(--pi-panel)] px-6 py-7 backdrop-blur-xl md:px-8">
+        <header className="rounded-[2rem] border border-[var(--pi-border)] bg-[var(--pi-panel)] px-6 py-7 shadow-[0_24px_70px_rgba(65,88,130,0.12)] ring-1 ring-white/70 backdrop-blur-xl md:px-8">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <div className="flex items-center gap-2 text-xs uppercase tracking-[0.14em] text-[var(--pi-muted)]">
@@ -70,7 +70,7 @@ export default async function ProjectDetailPage({
               type="search"
               defaultValue={search.q ?? ""}
               placeholder="Search documents"
-              className="w-full rounded-2xl border border-[var(--pi-border)] bg-[rgba(11,18,29,0.68)] px-4 py-3 text-sm text-[var(--pi-ink)] outline-none transition placeholder:text-[var(--pi-muted)] focus:border-[var(--pi-border-strong)] focus:ring-2 focus:ring-[var(--pi-brand-soft)]"
+              className="w-full rounded-2xl border border-[var(--pi-border)] bg-white/82 px-4 py-3 text-sm text-[var(--pi-ink)] outline-none transition placeholder:text-[var(--pi-muted)] focus:border-[var(--pi-border-strong)] focus:ring-4 focus:ring-[var(--pi-brand-soft)]"
             />
           </form>
         </header>

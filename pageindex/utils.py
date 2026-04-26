@@ -16,6 +16,13 @@ import logging
 import yaml
 from pathlib import Path
 from types import SimpleNamespace as config
+from time import perf_counter
+
+try:
+    from services.common.index_metrics import current_index_metrics
+except Exception:
+    def current_index_metrics():
+        return None
 
 # Backward compatibility: support CHATGPT_API_KEY as alias for OPENAI_API_KEY
 if not os.getenv("OPENAI_API_KEY") and os.getenv("CHATGPT_API_KEY"):
@@ -36,12 +43,20 @@ def llm_completion(model, prompt, chat_history=None, return_finish_reason=False)
     messages = list(chat_history) + [{"role": "user", "content": prompt}] if chat_history else [{"role": "user", "content": prompt}]
     for i in range(max_retries):
         try:
+            started_at = perf_counter()
             response = litellm.completion(
                 model=model,
                 messages=messages,
                 temperature=0,
             )
             content = response.choices[0].message.content
+            _record_llm_metrics(
+                model=model,
+                messages=messages,
+                content=content,
+                response=response,
+                elapsed_ms=int((perf_counter() - started_at) * 1000),
+            )
             if return_finish_reason:
                 finish_reason = "max_output_reached" if response.choices[0].finish_reason == "length" else "finished"
                 return content, finish_reason
@@ -66,12 +81,21 @@ async def llm_acompletion(model, prompt):
     messages = [{"role": "user", "content": prompt}]
     for i in range(max_retries):
         try:
+            started_at = perf_counter()
             response = await litellm.acompletion(
                 model=model,
                 messages=messages,
                 temperature=0,
             )
-            return response.choices[0].message.content
+            content = response.choices[0].message.content
+            _record_llm_metrics(
+                model=model,
+                messages=messages,
+                content=content,
+                response=response,
+                elapsed_ms=int((perf_counter() - started_at) * 1000),
+            )
+            return content
         except Exception as e:
             print('************* Retrying *************')
             logging.error(f"Error: {e}")
@@ -80,6 +104,51 @@ async def llm_acompletion(model, prompt):
             else:
                 logging.error('Max retries reached for prompt: ' + prompt)
                 return ""
+
+
+def _message_text(messages):
+    parts = []
+    for message in messages:
+        content = message.get("content", "") if isinstance(message, dict) else ""
+        if isinstance(content, str):
+            parts.append(content)
+        elif isinstance(content, list):
+            for item in content:
+                if isinstance(item, dict) and isinstance(item.get("text"), str):
+                    parts.append(item["text"])
+    return "\n".join(parts)
+
+
+def _usage_value(usage, key):
+    if usage is None:
+        return None
+    if isinstance(usage, dict):
+        return usage.get(key)
+    return getattr(usage, key, None)
+
+
+def _record_llm_metrics(model, messages, content, response, elapsed_ms):
+    metrics = current_index_metrics()
+    if metrics is None:
+        return
+
+    usage = getattr(response, "usage", None)
+    prompt_tokens = _usage_value(usage, "prompt_tokens")
+    completion_tokens = _usage_value(usage, "completion_tokens")
+    token_source = "provider_usage"
+
+    if prompt_tokens is None or completion_tokens is None:
+        token_source = "estimated"
+        prompt_tokens = count_tokens(_message_text(messages), model=model)
+        completion_tokens = count_tokens(content or "", model=model)
+
+    metrics.record_llm_call(
+        model=model,
+        prompt_tokens=int(prompt_tokens or 0),
+        completion_tokens=int(completion_tokens or 0),
+        elapsed_ms=elapsed_ms,
+        token_source=token_source,
+    )
             
             
 def get_json_content(response):
@@ -707,4 +776,3 @@ def print_tree(tree, indent=0):
 def print_wrapped(text, width=100):
     for line in text.splitlines():
         print(textwrap.fill(line, width=width))
-

@@ -28,7 +28,19 @@ afterEach(() => {
 });
 
 describe("Chat page components", () => {
-  it("disables send when no project is selected", () => {
+  it("sends a global retrieval query when no project is selected", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ id: "conv_new" }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ answer: "stub", citations: [], selectedDocuments: [], evidence: [] }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
     render(
       <ChatComposer
         availableProjects={[
@@ -42,8 +54,33 @@ describe("Chat page components", () => {
     fireEvent.change(screen.getByRole("textbox"), {
       target: { value: "How did revenue change?" },
     });
+    fireEvent.click(screen.getByRole("button", { name: /send/i }));
 
-    expect(screen.getByRole("button", { name: /send/i })).toBeDisabled();
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/conversations",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ projectIds: [] }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/chat/send",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          conversationId: "conv_new",
+          projectIds: [],
+          message: "How did revenue change?",
+          mode: "answer",
+        }),
+      }),
+    );
   });
 
   it("creates a conversation before sending and then navigates to it", async () => {
@@ -95,11 +132,57 @@ describe("Chat page components", () => {
           conversationId: "conv_new",
           projectIds: ["proj_1"],
           message: "Summarize Alpha documents",
+          mode: "answer",
         }),
       }),
     );
     expect(routerMocks.push).toHaveBeenCalledWith("/chat?conversationId=conv_new");
     expect(routerMocks.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends evidence mode when the retrieval mode toggle is switched", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ id: "conv_new" }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ answer: "", citations: [], selectedDocuments: [], evidence: [] }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <ChatComposer
+        availableProjects={[{ id: "proj_1", name: "Alpha" }]}
+        selectedProjectIds={["proj_1"]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /evidence mode/i }));
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "Show me supporting evidence" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /send/i }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/chat/send",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          conversationId: "conv_new",
+          projectIds: ["proj_1"],
+          message: "Show me supporting evidence",
+          mode: "evidence",
+        }),
+      }),
+    );
   });
 
   it("shows an error message when sending fails", async () => {
@@ -192,11 +275,48 @@ describe("Chat page components", () => {
             content: "The revenue summary appears in two places.",
             citations: [
               {
-                projectId: "proj_1",
+              projectId: "proj_1",
+              projectName: "Alpha",
+              documentId: "doc_1",
+              documentName: "Q1 Summary.pdf",
+              pages: "2-3",
+              focusPage: 3,
+              excerpt: "Revenue increased after the migration completed.",
+            },
+          ],
+        },
+      ]}
+      />,
+    );
+
+    expect(screen.getByText("The revenue summary appears in two places.")).toBeVisible();
+    expect(
+      screen.getByText(/\[Alpha\] Q1 Summary\.pdf - pages 2-3 · focus page 3/i),
+    ).toBeVisible();
+    expect(
+      screen.getByText("Revenue increased after the migration completed."),
+    ).toBeVisible();
+  });
+
+  it("renders evidence cards for assistant messages", () => {
+    render(
+      <ChatMessageList
+        messages={[
+          {
+            id: "msg_1",
+            role: "assistant",
+            content: "Evidence mode returned 1 item.",
+            citations: [],
+            evidence: [
+              {
                 projectName: "Alpha",
-                documentId: "doc_1",
-                documentName: "Q1 Summary.pdf",
-                pages: "2-3",
+                documentName: "handover.md",
+                sourceRelativePath: "Alpha/delivery/handover.md",
+                projectRelativePath: "delivery/handover.md",
+                pages: "1",
+                evidenceKind: "markdown_text",
+                excerpt: "Acceptance evidence",
+                content: "Acceptance evidence and handover notes.",
               },
             ],
           },
@@ -204,10 +324,10 @@ describe("Chat page components", () => {
       />,
     );
 
-    expect(screen.getByText("The revenue summary appears in two places.")).toBeVisible();
-    expect(
-      screen.getByText(/\[Alpha\] Q1 Summary\.pdf - pages 2-3/i),
-    ).toBeVisible();
+    expect(screen.getByText("Evidence mode returned 1 item.")).toBeVisible();
+    expect(screen.getByText("delivery/handover.md")).toBeVisible();
+    expect(screen.getByText("Acceptance evidence and handover notes.")).toBeVisible();
+    expect(screen.queryByText(/\[Alpha\] handover\.md - pages 1/i)).not.toBeInTheDocument();
   });
 
   it("falls back to an empty chat state when conversation is outside owner scope", async () => {
@@ -245,7 +365,7 @@ describe("Chat page components", () => {
     expect(screen.getByRole("heading", { name: /new chat/i })).toBeInTheDocument();
     expect(
       screen.getByText(
-        /select one or more projects, then ask a question against indexed PDFs/i,
+        /ask across every indexed project, optionally select project scopes/i,
       ),
     ).toBeInTheDocument();
     expect(getConversationDetail).toHaveBeenCalledWith(
@@ -297,7 +417,7 @@ describe("Chat page components", () => {
     render(view);
 
     expect(screen.getByRole("heading", { name: /quarterly review/i })).toBeInTheDocument();
-    expect(screen.getByText(/scope/i)).toBeInTheDocument();
+    expect(screen.getByText("Scope")).toBeInTheDocument();
     expect(screen.getByText("Alpha", { selector: "span" })).toBeInTheDocument();
   });
 });

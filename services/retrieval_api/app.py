@@ -9,5 +9,5 @@ app = FastAPI()
 
 @app.post("/internal/retrieve/query")
 def retrieve_query(request: QueryRequest) -> QueryResponse:
-    result = answer_question(str(DB_PATH), request.query, request.projectIds)
+    result = answer_question(str(DB_PATH), request.query, request.projectIds, mode=request.mode)
     return QueryResponse.model_validate(result)

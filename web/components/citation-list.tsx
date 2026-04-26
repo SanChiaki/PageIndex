@@ -6,6 +6,8 @@ export type CitationItem = {
   documentId?: string;
   documentName: string;
   pages: string;
+  focusPage?: number;
+  excerpt?: string;
 };
 
 export function CitationList({ citations }: { citations: CitationItem[] }) {
@@ -18,9 +20,15 @@ export function CitationList({ citations }: { citations: CitationItem[] }) {
       {citations.map((citation, index) => (
         <li
           key={`${citation.projectName}-${citation.documentName}-${citation.pages}-${index}`}
-          className="rounded-xl border border-[var(--pi-border)] bg-[rgba(16,24,38,0.56)] px-3 py-2"
+          className="rounded-xl border border-[var(--pi-border)] bg-white/70 px-3 py-2"
         >
-          [{citation.projectName}] {citation.documentName} - pages {citation.pages}
+          <p className="text-xs text-[var(--pi-muted)]">
+            [{citation.projectName}] {citation.documentName} - pages {citation.pages}
+            {citation.focusPage ? ` · focus page ${citation.focusPage}` : ""}
+          </p>
+          {citation.excerpt ? (
+            <p className="mt-1 text-sm leading-6 text-[var(--pi-ink)]">{citation.excerpt}</p>
+          ) : null}
         </li>
       ))}
     </ul>

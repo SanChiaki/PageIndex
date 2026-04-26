@@ -30,7 +30,7 @@
 
 ## Project-Centric Knowledge Chat (Local Development)
 
-This branch includes a simple project-centric workflow in [`web/`](web): create projects, upload PDFs, let the index worker process them, then chat with a project scope.
+This branch includes a simple project-centric workflow in [`web/`](web): create projects, upload PDFs, let the index worker process them, then chat across all indexed projects or optionally narrow retrieval with a project scope.
 
 ### Services to Run
 
@@ -64,7 +64,47 @@ Notes:
 1. Open `http://localhost:3000/projects`.
 2. Click `New Project`.
 3. Open the project, upload a PDF, and wait until indexing completes.
-4. Open `http://localhost:3000/chat`, select the project in the scope picker, and ask a question.
+4. Open `http://localhost:3000/chat` and ask a question. Leave the scope picker empty to search all ready documents, or select one or more projects to narrow retrieval.
+
+### Docker Directory Knowledge Service
+
+Run the full local stack with a mounted project corpus:
+
+```bash
+PROJECTS_ROOT=/absolute/path/to/projects docker compose up --build
+```
+
+The mounted folder must use first-level directories as projects:
+
+```text
+/absolute/path/to/projects/
+  ProjectA/
+    delivery/report.md
+    photos/site.png
+  ProjectB/
+    handover/report.pdf
+```
+
+Docker services:
+
+- `web`: Next.js application on `http://localhost:3000`
+- `retrieval-api`: FastAPI retrieval API on `http://localhost:8001`
+- `index-worker`: PageIndex indexing worker
+- `directory-watcher`: startup scan plus continuous polling import
+
+Shared runtime state is stored in `./var`. Directory-imported documents preserve
+their source-relative paths, and the project document table shows latest parse
+duration, Token usage, and model call count after indexing.
+
+Image files are imported as searchable evidence only when vision extraction is
+configured:
+
+```bash
+VISION_EXTRACTION_ENABLED=true \
+VISION_MODEL=gpt-4.1 \
+PROJECTS_ROOT=/absolute/path/to/projects \
+docker compose up --build
+```
 
 ### E2E Tests (Playwright)
 
@@ -140,8 +180,8 @@ RETRIEVAL_API_BASE_URL=http://127.0.0.1:8001
 3. Upload a PDF into that project.
 4. Wait until the document status becomes `ready`.
 5. Open `http://localhost:3000/chat`.
-6. Select the project in chat scope.
-7. Ask a question and review the cited answer.
+6. Ask a question directly to search all ready documents, or select project chips to narrow the retrieval scope.
+7. Review the answer or switch to Evidence mode to inspect returned source blocks.
 
 ## Test Commands
 

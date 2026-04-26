@@ -10,7 +10,7 @@ export function ChatHistoryList({
 }) {
   if (conversations.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-[var(--pi-border)] bg-[rgba(14,20,30,0.42)] px-3 py-4 text-xs text-[var(--pi-muted)]">
+      <div className="rounded-2xl border border-dashed border-[var(--pi-border)] bg-white/52 px-3 py-4 text-xs text-[var(--pi-muted)]">
         {collapsed ? "Chats" : "Conversation history will appear here."}
       </div>
     );
@@ -22,7 +22,7 @@ export function ChatHistoryList({
         <Link
           key={conversation.id}
           href={`/chat?conversationId=${conversation.id}`}
-          className={`block rounded-2xl border border-[var(--pi-border)] bg-[rgba(16,24,38,0.68)] text-sm transition hover:border-[var(--pi-border-strong)] hover:bg-[rgba(22,33,51,0.88)] ${
+          className={`block rounded-2xl border border-[var(--pi-border)] bg-white/58 text-sm shadow-[0_8px_22px_rgba(65,88,130,0.06)] transition hover:border-[var(--pi-border-strong)] hover:bg-white ${
             collapsed ? "px-2 py-3 text-center" : "px-3 py-3"
           }`}
         >

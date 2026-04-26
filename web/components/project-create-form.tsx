@@ -56,12 +56,12 @@ export function ProjectCreateForm() {
           }}
           placeholder="Enter project name"
           maxLength={120}
-          className="w-full min-w-[15rem] rounded-2xl border border-[var(--pi-border)] bg-[rgba(11,18,29,0.68)] px-4 py-2.5 text-sm text-[var(--pi-ink)] outline-none transition placeholder:text-[var(--pi-muted)] focus:border-[var(--pi-border-strong)] focus:ring-2 focus:ring-[var(--pi-brand-soft)]"
+          className="w-full min-w-[15rem] rounded-2xl border border-[var(--pi-border)] bg-white/82 px-4 py-2.5 text-sm text-[var(--pi-ink)] outline-none transition placeholder:text-[var(--pi-muted)] focus:border-[var(--pi-border-strong)] focus:ring-4 focus:ring-[var(--pi-brand-soft)]"
         />
         <button
           type="submit"
           disabled={!trimmedName || submitting}
-          className="rounded-2xl border border-[var(--pi-border-strong)] bg-[linear-gradient(135deg,rgba(64,126,255,0.9),rgba(49,92,198,0.88))] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_14px_34px_rgba(52,112,255,0.28)] transition enabled:hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-45"
+          className="rounded-2xl border border-[var(--pi-brand)] bg-[var(--pi-brand)] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_14px_34px_rgba(37,99,235,0.22)] transition enabled:hover:-translate-y-0.5 enabled:hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-45"
         >
           {submitting ? "Creating..." : "Create Project"}
         </button>

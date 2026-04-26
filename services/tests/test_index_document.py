@@ -87,6 +87,194 @@ def test_process_document_job_marks_document_ready(tmp_path, monkeypatch):
     assert job_status == ("completed",)
 
 
+def test_process_document_job_records_completed_index_run(tmp_path, monkeypatch):
+    db_path = _seed_single_document_job_db(tmp_path)
+
+    monkeypatch.setattr(
+        "services.index_worker.index_document.build_pageindex_payload",
+        lambda file_path, document=None: {
+            "doc_name": "alpha.pdf",
+            "doc_description": "Alpha test document",
+            "structure": [{"title": "Intro", "node_id": "0001", "start_index": 1, "end_index": 1, "summary": "Intro"}],
+            "pages": [{"page": 1, "content": "hello"}],
+            "page_count": 1,
+            "evidence_kind": "pdf_text",
+            "visual_assets": [],
+            "source_metadata": {"sourceRelativePath": "Alpha/alpha.pdf"},
+        },
+    )
+
+    process_document_job(str(db_path), "job_1")
+
+    conn = sqlite3.connect(db_path)
+    run = conn.execute(
+        """
+        SELECT status, duration_ms, llm_call_count, total_tokens, token_source
+          FROM document_index_runs
+         WHERE document_id = 'doc_1'
+        """
+    ).fetchone()
+    document_metrics = conn.execute(
+        """
+        SELECT last_index_duration_ms, last_index_total_tokens,
+               last_index_llm_call_count, last_indexed_at
+          FROM documents
+         WHERE id = 'doc_1'
+        """
+    ).fetchone()
+    index_metadata = conn.execute(
+        """
+        SELECT evidence_kind, visual_assets_json, source_metadata_json
+          FROM document_indexes
+         WHERE document_id = 'doc_1'
+        """
+    ).fetchone()
+    conn.close()
+
+    assert run[0] == "completed"
+    assert run[1] >= 0
+    assert run[2:] == (0, 0, "estimated")
+    assert document_metrics[0] == run[1]
+    assert document_metrics[1:3] == (0, 0)
+    assert document_metrics[3] is not None
+    assert index_metadata[0] == "pdf_text"
+    assert json.loads(index_metadata[1]) == []
+    assert json.loads(index_metadata[2]) == {"sourceRelativePath": "Alpha/alpha.pdf"}
+
+
+def test_process_document_job_indexes_plain_text_document(tmp_path):
+    db_path = _seed_single_document_job_db(tmp_path)
+    text_path = tmp_path / "notes.txt"
+    text_path.write_text("Delivery scope\nAcceptance evidence", encoding="utf-8")
+
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """
+        UPDATE documents
+           SET file_name = ?, storage_path = ?, mime_type = ?, media_type = ?
+         WHERE id = 'doc_1'
+        """,
+        ("notes.txt", str(text_path), "text/plain", "text"),
+    )
+    conn.commit()
+    conn.close()
+
+    process_document_job(str(db_path), "job_1")
+
+    conn = sqlite3.connect(db_path)
+    row = conn.execute(
+        """
+        SELECT di.doc_name, di.doc_description, di.structure_json, di.pages_json,
+               di.evidence_kind, d.status, d.page_count
+          FROM document_indexes di
+          JOIN documents d ON d.id = di.document_id
+         WHERE di.document_id = 'doc_1'
+        """
+    ).fetchone()
+    conn.close()
+
+    structure = json.loads(row[2])
+    pages = json.loads(row[3])
+    assert row[0] == "notes.txt"
+    assert "notes.txt" in row[1]
+    assert structure[0]["title"] == "notes.txt"
+    assert pages == [{"page": 1, "content": "Delivery scope\nAcceptance evidence"}]
+    assert row[4:] == ("text", "ready", 1)
+
+
+def test_process_document_job_indexes_markdown_document_without_llm(tmp_path):
+    db_path = _seed_single_document_job_db(tmp_path)
+    markdown_path = tmp_path / "handover.md"
+    markdown_path.write_text(
+        "# Handover\n\nAcceptance evidence\n\n## Checklist\n\n- Signed report",
+        encoding="utf-8",
+    )
+
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """
+        UPDATE documents
+           SET file_name = ?, storage_path = ?, mime_type = ?, media_type = ?
+         WHERE id = 'doc_1'
+        """,
+        ("handover.md", str(markdown_path), "text/markdown", "markdown"),
+    )
+    conn.commit()
+    conn.close()
+
+    process_document_job(str(db_path), "job_1")
+
+    conn = sqlite3.connect(db_path)
+    row = conn.execute(
+        """
+        SELECT di.doc_name, di.doc_description, di.structure_json,
+               di.pages_json, di.evidence_kind
+          FROM document_indexes di
+         WHERE di.document_id = 'doc_1'
+        """
+    ).fetchone()
+    run = conn.execute(
+        "SELECT status, llm_call_count FROM document_index_runs WHERE document_id = 'doc_1'"
+    ).fetchone()
+    conn.close()
+
+    structure = json.loads(row[2])
+    pages = json.loads(row[3])
+    assert row[0] == "handover"
+    assert "handover.md" in row[1]
+    assert structure[0]["title"] == "Handover"
+    assert pages[0]["content"].startswith("# Handover")
+    assert row[4] == "markdown_text"
+    assert run == ("completed", 0)
+
+
+def test_process_document_job_skips_image_without_vision_model(tmp_path, monkeypatch):
+    db_path = _seed_single_document_job_db(tmp_path)
+    image_path = tmp_path / "site.png"
+    image_path.write_bytes(b"not-a-real-image")
+
+    monkeypatch.delenv("VISION_MODEL", raising=False)
+    monkeypatch.setenv("VISION_EXTRACTION_ENABLED", "true")
+
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """
+        UPDATE documents
+           SET file_name = ?, storage_path = ?, mime_type = ?, media_type = ?
+         WHERE id = 'doc_1'
+        """,
+        ("site.png", str(image_path), "image/png", "image"),
+    )
+    conn.commit()
+    conn.close()
+
+    process_document_job(str(db_path), "job_1")
+
+    conn = sqlite3.connect(db_path)
+    document = conn.execute(
+        "SELECT status, error_message, import_status, import_error FROM documents WHERE id = 'doc_1'"
+    ).fetchone()
+    job = conn.execute("SELECT status, error_message FROM jobs WHERE id = 'job_1'").fetchone()
+    run = conn.execute(
+        "SELECT status, total_tokens, error_message FROM document_index_runs WHERE document_id = 'doc_1'"
+    ).fetchone()
+    index_count = conn.execute(
+        "SELECT COUNT(*) FROM document_indexes WHERE document_id = 'doc_1'"
+    ).fetchone()[0]
+    conn.close()
+
+    expected_error = "Image indexing requires VISION_EXTRACTION_ENABLED=true and VISION_MODEL to be configured."
+    assert document[0] == "skipped"
+    assert document[1] == expected_error
+    assert document[2] == "skipped"
+    assert document[3] == expected_error
+    assert job == ("completed", None)
+    assert run[0] == "skipped"
+    assert run[1] == 0
+    assert run[2] == expected_error
+    assert index_count == 0
+
+
 def test_process_document_job_reindex_is_idempotent_for_same_document(tmp_path, monkeypatch):
     db_path = _seed_single_document_job_db(tmp_path)
     payloads = iter(

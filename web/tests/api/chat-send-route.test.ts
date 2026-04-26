@@ -167,6 +167,7 @@ describe("chat send route validation", () => {
       answer: "I ran into a retrieval error. Please try again.",
       citations: [],
       selectedDocuments: [],
+      evidence: [],
     });
     expect(detail.title).toBe("Summarize alpha revenue");
     expect(detail.messages).toHaveLength(2);
@@ -176,5 +177,104 @@ describe("chat send route validation", () => {
     expect(detail.messages[1].content).toBe(json.answer);
     expect(detail.messages[1].citations).toEqual([]);
     expect(sendRetrievalQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes evidence mode through and persists returned evidence", async () => {
+    const { dbPath } = makeTempDb();
+    mockConfig(dbPath);
+    const conversation = createConversation(dbPath, "user_demo");
+    const project = createProject(dbPath, {
+      ownerUserId: "user_demo",
+      name: "Alpha",
+    });
+
+    const evidence = [
+      {
+        projectId: project.id,
+        projectName: "Alpha",
+        documentId: "doc_1",
+        documentName: "handover.md",
+        sourceRelativePath: "Alpha/delivery/handover.md",
+        projectRelativePath: "delivery/handover.md",
+        pages: "1",
+        evidenceKind: "markdown_text",
+        excerpt: "Acceptance evidence",
+        content: "Acceptance evidence and handover notes.",
+        visualAssets: [],
+      },
+    ];
+    const sendRetrievalQuery = vi.fn().mockResolvedValue({
+      answer: "",
+      citations: [],
+      selectedDocuments: [{ documentId: "doc_1", sourceRelativePath: "Alpha/delivery/handover.md" }],
+      evidence,
+    });
+    vi.doMock("@/lib/retrieval-client", () => ({
+      sendRetrievalQuery,
+    }));
+
+    const { POST } = await import("@/app/api/chat/send/route");
+    const response = await POST(
+      new Request("http://localhost/api/chat/send", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          conversationId: conversation.id,
+          projectIds: [project.id],
+          message: "Show evidence",
+          mode: "evidence",
+        }),
+      }),
+    );
+    const json = await response.json();
+    const detail = getConversationDetail(dbPath, conversation.id);
+
+    expect(response.status).toBe(200);
+    expect(json.evidence).toEqual(evidence);
+    expect(sendRetrievalQuery).toHaveBeenCalledWith({
+      query: "Show evidence",
+      projectIds: [project.id],
+      mode: "evidence",
+    });
+    expect(detail.messages[1].content).toBe("Evidence mode returned 1 evidence item.");
+    expect(detail.messages[1].citations).toEqual(evidence);
+  });
+
+  it("allows sending without projectIds and treats it as global retrieval", async () => {
+    const { dbPath } = makeTempDb();
+    mockConfig(dbPath);
+    const conversation = createConversation(dbPath, "user_demo");
+
+    const sendRetrievalQuery = vi.fn().mockResolvedValue({
+      answer: "global answer",
+      citations: [],
+      selectedDocuments: [],
+      evidence: [],
+    });
+    vi.doMock("@/lib/retrieval-client", () => ({
+      sendRetrievalQuery,
+    }));
+
+    const { POST } = await import("@/app/api/chat/send/route");
+    const response = await POST(
+      new Request("http://localhost/api/chat/send", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          conversationId: conversation.id,
+          message: "Find final acceptance handover reports",
+        }),
+      }),
+    );
+    const detail = getConversationDetail(dbPath, conversation.id);
+
+    expect(response.status).toBe(200);
+    expect(sendRetrievalQuery).toHaveBeenCalledWith({
+      query: "Find final acceptance handover reports",
+      projectIds: [],
+      mode: "answer",
+    });
+    expect(detail.projectIds).toEqual([]);
+    expect(detail.messages[1].content).toBe("global answer");
   });
 });

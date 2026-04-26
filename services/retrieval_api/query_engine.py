@@ -1,5 +1,6 @@
 import json
 from functools import lru_cache
+import re
 from typing import Any
 
 from pageindex.utils import ConfigLoader
@@ -16,14 +17,150 @@ def _get_retrieval_model() -> str | None:
     return getattr(config, "retrieve_model", None) or getattr(config, "model", None)
 
 
-def build_citation(project: dict[str, str], document: dict[str, str], pages: str) -> dict:
-    return {
+_CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
+_LATIN_RE = re.compile(r"[a-z0-9]+")
+
+
+def build_citation(
+    project: dict[str, str],
+    document: dict[str, str],
+    pages: str,
+    *,
+    focus_page: int | None = None,
+    excerpt: str | None = None,
+) -> dict:
+    citation = {
         "projectId": project["id"],
         "projectName": project["name"],
         "documentId": document["id"],
         "documentName": document["file_name"],
         "pages": pages,
     }
+    if focus_page is not None:
+        citation["focusPage"] = focus_page
+    if excerpt:
+        citation["excerpt"] = excerpt
+    return citation
+
+
+def _tokenize_query(text: str) -> list[str]:
+    lowered = text.lower()
+    latin_tokens = _LATIN_RE.findall(lowered)
+    cjk_chars = _CJK_RE.findall(text)
+    cjk_tokens = list(cjk_chars)
+    if len(cjk_chars) > 1:
+        cjk_tokens.extend(
+            "".join(cjk_chars[index : index + 2]) for index in range(len(cjk_chars) - 1)
+        )
+    return [token for token in [*latin_tokens, *cjk_tokens] if token]
+
+
+def _normalize_whitespace(text: str) -> str:
+    return " ".join(text.replace("\u3000", " ").split())
+
+
+def _split_excerpt_blocks(text: str) -> list[str]:
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    normalized = re.sub(r"[ \t]{4,}", "\n", normalized)
+    normalized = re.sub(r"\s+(?=(?:#{1,6}\s|>\s|\|\s|- ))", "\n", normalized)
+    blocks: list[str] = []
+    current: list[str] = []
+
+    def flush_current():
+        if current:
+            block = _normalize_whitespace(" ".join(current))
+            if block:
+                blocks.append(block)
+            current.clear()
+
+    for raw_line in normalized.split("\n"):
+        line = raw_line.strip()
+        if not line:
+            flush_current()
+            continue
+        if line.startswith(("- ", "•", "* ", "1.", "2.", "3.", "4.", "5.", "#", ">", "|")):
+            flush_current()
+            text_blocks = [_normalize_whitespace(part) for part in re.split(r"(?<=[。！？；.!?])\s+", line)]
+            blocks.extend([part for part in text_blocks if part])
+            continue
+        current.append(line)
+
+    flush_current()
+    expanded_blocks: list[str] = []
+    for block in blocks:
+        if len(block) <= 180:
+            expanded_blocks.append(block)
+            continue
+        text_blocks = [_normalize_whitespace(part) for part in re.split(r"(?<=[。！？；.!?])\s+", block)]
+        expanded_blocks.extend([part for part in text_blocks if part])
+
+    if expanded_blocks:
+        return expanded_blocks
+
+    fallback = _normalize_whitespace(text)
+    return [fallback] if fallback else []
+
+
+def _score_excerpt_block(query: str, block: str) -> int:
+    haystack = block.lower()
+    score = 0
+    for token in _tokenize_query(query):
+        if not token or token not in haystack:
+            continue
+        score += 4 if len(token) >= 2 else 1
+    score *= 100
+    score -= min(len(block), 400) // 4
+    if block.startswith("#"):
+        score -= 220
+    elif block.startswith((">", "|")):
+        score -= 80
+    if block.startswith(("- ", "•", "* ")):
+        score += 40
+    return score
+
+
+def _truncate_excerpt(text: str, max_length: int = 220) -> str:
+    if len(text) <= max_length:
+        return text
+    return f"{text[: max_length - 1].rstrip()}..."
+
+
+def _select_citation_anchor(
+    query: str,
+    evidence: list[dict[str, Any]],
+) -> tuple[int | None, str | None]:
+    best_page: int | None = None
+    best_block: str | None = None
+    best_score = -10**9
+
+    for item in evidence:
+        if not isinstance(item, dict):
+            continue
+        content = item.get("content")
+        if not isinstance(content, str) or not content.strip():
+            continue
+        page = item.get("page")
+        page_number = page if isinstance(page, int) else None
+        blocks = _split_excerpt_blocks(content)
+        if not blocks:
+            continue
+
+        for block in blocks:
+            if block.startswith(("#", "|")):
+                continue
+            score = _score_excerpt_block(query, block)
+            if best_block is None or score > best_score or (
+                score == best_score
+                and best_block is not None
+                and len(block) < len(best_block)
+            ):
+                best_score = score
+                best_page = page_number
+                best_block = block
+
+    if best_block is None:
+        return None, None
+    return best_page, _truncate_excerpt(best_block)
 
 
 def _default_page_window(document: dict[str, Any]) -> str:
@@ -180,28 +317,52 @@ Return only the answer text.
     return answer or "I could not generate an answer from the selected documents."
 
 
-def answer_question(db_path: str, query: str, project_ids: list[str]) -> dict:
-    if not project_ids:
-        return {
-            "answer": "No projects were selected for retrieval.",
-            "citations": [],
-            "selectedDocuments": [],
-        }
+def _parse_json_list(value: str | None) -> list:
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value)
+    except (json.JSONDecodeError, TypeError):
+        return []
+    return parsed if isinstance(parsed, list) else []
 
-    placeholders = ",".join("?" for _ in project_ids)
+
+def _join_evidence_content(evidence: list[dict[str, Any]]) -> str:
+    return "\n\n".join(
+        item["content"]
+        for item in evidence
+        if isinstance(item, dict) and isinstance(item.get("content"), str)
+    )
+
+
+def answer_question(
+    db_path: str,
+    query: str,
+    project_ids: list[str] | None = None,
+    mode: str = "answer",
+) -> dict:
+    project_filter = ""
+    project_params: list[str] = []
+    if project_ids:
+        placeholders = ",".join("?" for _ in project_ids)
+        project_filter = f"AND d.project_id IN ({placeholders})"
+        project_params = project_ids
+
     with open_db(db_path) as conn:
         rows = conn.execute(
             f"""
             SELECT d.id, d.project_id, d.file_name, p.name AS project_name,
-                   di.doc_description, di.structure_json, di.pages_json
+                   d.source_relative_path, d.project_relative_path,
+                   di.doc_description, di.structure_json, di.pages_json,
+                   di.evidence_kind, di.visual_assets_json
               FROM documents d
               JOIN projects p ON p.id = d.project_id
               JOIN document_indexes di ON di.document_id = d.id
              WHERE d.status = 'ready'
                AND d.deleted_at IS NULL
-               AND d.project_id IN ({placeholders})
+               {project_filter}
             """,
-            project_ids,
+            project_params,
         ).fetchall()
 
     docs = []
@@ -219,7 +380,11 @@ def answer_question(db_path: str, query: str, project_ids: list[str]) -> dict:
                 "project_id": row["project_id"],
                 "project_name": row["project_name"],
                 "file_name": row["file_name"],
+                "source_relative_path": row["source_relative_path"],
+                "project_relative_path": row["project_relative_path"],
                 "doc_description": row["doc_description"],
+                "evidence_kind": row["evidence_kind"],
+                "visual_assets": _parse_json_list(row["visual_assets_json"]),
                 "structure": structure,
                 "pages": pages,
             }
@@ -233,13 +398,15 @@ def answer_question(db_path: str, query: str, project_ids: list[str]) -> dict:
     )
     if not selected:
         return {
-            "answer": "No ready documents matched the selected projects.",
+            "answer": "No ready documents matched the retrieval scope.",
             "citations": [],
             "selectedDocuments": [],
+            "evidence": [],
         }
 
     context_blocks = []
     citations = []
+    evidence_blocks = []
     used_documents = []
     for document in selected:
         pages = choose_page_window(query, document)
@@ -252,20 +419,41 @@ def answer_question(db_path: str, query: str, project_ids: list[str]) -> dict:
             evidence = _load_page_excerpt(document, pages)
         if not evidence:
             continue
+        focus_page, excerpt = _select_citation_anchor(query, evidence)
         context_blocks.append(
             {
                 "project": document["project_name"],
                 "document": document["file_name"],
+                "sourceRelativePath": document.get("source_relative_path"),
+                "projectRelativePath": document.get("project_relative_path"),
                 "pages": pages,
                 "evidence": evidence,
             }
         )
-        citations.append(
-            build_citation(
-                project={"id": document["project_id"], "name": document["project_name"]},
-                document={"id": document["id"], "file_name": document["file_name"]},
-                pages=pages,
+        if mode != "evidence":
+            citations.append(
+                build_citation(
+                    project={"id": document["project_id"], "name": document["project_name"]},
+                    document={"id": document["id"], "file_name": document["file_name"]},
+                    pages=pages,
+                    focus_page=focus_page,
+                    excerpt=excerpt,
+                )
             )
+        evidence_blocks.append(
+            {
+                "projectId": document["project_id"],
+                "projectName": document["project_name"],
+                "documentId": document["id"],
+                "documentName": document["file_name"],
+                "sourceRelativePath": document.get("source_relative_path"),
+                "projectRelativePath": document.get("project_relative_path"),
+                "pages": pages,
+                "evidenceKind": document.get("evidence_kind") or "text",
+                "excerpt": excerpt,
+                "content": _join_evidence_content(evidence),
+                "visualAssets": document.get("visual_assets", []),
+            }
         )
         used_documents.append(document)
 
@@ -274,10 +462,22 @@ def answer_question(db_path: str, query: str, project_ids: list[str]) -> dict:
             "answer": "I could not find usable evidence in selected documents.",
             "citations": [],
             "selectedDocuments": [],
+            "evidence": [],
         }
 
+    selected_documents = [
+        {"documentId": document["id"]}
+        if mode != "evidence" or not document.get("source_relative_path")
+        else {
+            "documentId": document["id"],
+            "sourceRelativePath": document.get("source_relative_path"),
+        }
+        for document in used_documents
+    ]
+
     return {
-        "answer": _generate_answer(query, context_blocks),
+        "answer": "" if mode == "evidence" else _generate_answer(query, context_blocks),
         "citations": citations,
-        "selectedDocuments": [{"documentId": document["id"]} for document in used_documents],
+        "selectedDocuments": selected_documents,
+        "evidence": evidence_blocks if mode == "evidence" else [],
     }

@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from services.retrieval_api import query_engine
 from services.retrieval_api.query_engine import answer_question, build_citation
+from services.retrieval_api.schemas import QueryRequest
 
 
 def test_build_citation_includes_project_and_pages():
@@ -12,6 +13,8 @@ def test_build_citation_includes_project_and_pages():
         project={"id": "proj_1", "name": "Alpha"},
         document={"id": "doc_1", "file_name": "alpha.pdf"},
         pages="4-5",
+        focus_page=5,
+        excerpt="Revenue increased after the migration completed.",
     )
 
     assert citation == {
@@ -20,6 +23,8 @@ def test_build_citation_includes_project_and_pages():
         "documentId": "doc_1",
         "documentName": "alpha.pdf",
         "pages": "4-5",
+        "focusPage": 5,
+        "excerpt": "Revenue increased after the migration completed.",
     }
 
 
@@ -37,6 +42,10 @@ def _seed_retrieval_db(tmp_path: Path) -> Path:
         "INSERT INTO projects (id, owner_user_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
         ("proj_1", "user_demo", "Alpha", "2026-04-19T00:00:00Z", "2026-04-19T00:00:00Z"),
     )
+    conn.execute(
+        "INSERT INTO projects (id, owner_user_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+        ("proj_2", "user_demo", "Beta", "2026-04-19T00:00:00Z", "2026-04-19T00:00:00Z"),
+    )
     conn.commit()
     conn.close()
     return db_path
@@ -49,21 +58,33 @@ def _insert_ready_document(
     doc_description: str,
     structure_json: str,
     pages_json: str,
+    source_relative_path: str | None = None,
+    project_relative_path: str | None = None,
+    project_id: str = "proj_1",
+    evidence_kind: str = "pdf_text",
+    visual_assets_json: str = "[]",
 ):
     conn = sqlite3.connect(db_path)
     conn.execute(
         """INSERT INTO documents
-           (id, project_id, owner_user_id, file_name, storage_path, mime_type, file_size, status, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           (id, project_id, owner_user_id, file_name, storage_path, mime_type,
+            file_size, status, source_kind, source_relative_path,
+            project_relative_path, media_type, import_status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             document_id,
-            "proj_1",
+            project_id,
             "user_demo",
             file_name,
             f"/tmp/{file_name}",
             "application/pdf",
             128,
             "ready",
+            "directory" if source_relative_path else "upload",
+            source_relative_path,
+            project_relative_path,
+            "pdf",
+            "imported",
             "2026-04-19T00:00:00Z",
             "2026-04-19T00:00:00Z",
         ),
@@ -72,8 +93,9 @@ def _insert_ready_document(
         """
         INSERT INTO document_indexes (
           id, document_id, doc_name, doc_description, structure_json,
-          pages_json, index_version, indexed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          pages_json, evidence_kind, visual_assets_json, source_metadata_json,
+          index_version, indexed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             f"idx_{document_id}",
@@ -82,12 +104,81 @@ def _insert_ready_document(
             doc_description,
             structure_json,
             pages_json,
+            evidence_kind,
+            visual_assets_json,
+            json.dumps({"sourceRelativePath": source_relative_path}),
             "v1",
             "2026-04-19T00:00:00Z",
         ),
     )
     conn.commit()
     conn.close()
+
+
+def test_query_request_allows_omitting_project_ids():
+    request = QueryRequest(query="生成终验交付报告", mode="evidence")
+
+    assert request.projectIds == []
+
+
+def test_answer_question_searches_all_projects_when_project_ids_are_empty(
+    tmp_path, monkeypatch
+):
+    db_path = _seed_retrieval_db(tmp_path)
+    _insert_ready_document(
+        db_path,
+        document_id="doc_alpha",
+        file_name="alpha-handover.md",
+        doc_description="final acceptance handover report",
+        structure_json=json.dumps([{"title": "alpha handover"}]),
+        pages_json=json.dumps([{"page": 1, "content": "alpha handover evidence"}]),
+        project_id="proj_1",
+        source_relative_path="Alpha/delivery/alpha-handover.md",
+        project_relative_path="delivery/alpha-handover.md",
+        evidence_kind="markdown_text",
+    )
+    _insert_ready_document(
+        db_path,
+        document_id="doc_beta",
+        file_name="beta-handover.md",
+        doc_description="final acceptance handover report",
+        structure_json=json.dumps([{"title": "beta handover"}]),
+        pages_json=json.dumps([{"page": 1, "content": "beta handover evidence"}]),
+        project_id="proj_2",
+        source_relative_path="Beta/delivery/beta-handover.md",
+        project_relative_path="delivery/beta-handover.md",
+        evidence_kind="markdown_text",
+    )
+
+    captured_docs: list[dict] = []
+
+    def fake_select_candidate_documents(query, docs, limit=5, model=None):
+        captured_docs.extend(docs)
+        return docs
+
+    monkeypatch.setattr(
+        "services.retrieval_api.query_engine.select_candidate_documents",
+        fake_select_candidate_documents,
+    )
+    monkeypatch.setattr(
+        "services.retrieval_api.query_engine.choose_page_window",
+        lambda _query, _doc: "1",
+    )
+    monkeypatch.setattr(
+        "services.retrieval_api.query_engine._load_page_excerpt",
+        lambda document, _pages: [
+            {"page": 1, "content": f"{document['project_name']} handover evidence"}
+        ],
+    )
+
+    result = answer_question(str(db_path), "final acceptance handover", [], mode="evidence")
+
+    assert {doc["project_id"] for doc in captured_docs} == {"proj_1", "proj_2"}
+    assert [item["projectName"] for item in result["evidence"]] == ["Alpha", "Beta"]
+    assert result["selectedDocuments"] == [
+        {"documentId": "doc_alpha", "sourceRelativePath": "Alpha/delivery/alpha-handover.md"},
+        {"documentId": "doc_beta", "sourceRelativePath": "Beta/delivery/beta-handover.md"},
+    ]
 
 
 def test_answer_question_falls_back_when_llm_pages_are_invalid(tmp_path, monkeypatch):
@@ -135,6 +226,8 @@ def test_answer_question_falls_back_when_llm_pages_are_invalid(tmp_path, monkeyp
 
     assert result["answer"] == "answer from fallback"
     assert result["citations"][0]["pages"] == "1-2"
+    assert result["citations"][0]["focusPage"] == 1
+    assert result["citations"][0]["excerpt"] == "fallback evidence"
     assert captured_context["blocks"][0]["evidence"] == [
         {"page": 1, "content": "fallback evidence"}
     ]
@@ -183,6 +276,8 @@ def test_answer_question_skips_bad_index_rows_and_uses_good_documents(tmp_path, 
             "documentId": "doc_good",
             "documentName": "good.pdf",
             "pages": "1",
+            "focusPage": 1,
+            "excerpt": "good evidence",
         }
     ]
 
@@ -270,6 +365,28 @@ def test_retrieval_llm_uses_configured_model(monkeypatch):
     assert seen_models == ["gpt-retrieval", "gpt-retrieval"]
 
 
+def test_select_citation_anchor_prefers_specific_paragraph_over_full_page_blob():
+    focus_page, excerpt = query_engine._select_citation_anchor(
+        "这个项目有哪些遗留事项？",
+        [
+            {
+                "page": 1,
+                "content": (
+                    "# 终验报告                              "
+                    "## KPI 验证结果                              "
+                    "关键业务割接中断时间 12 分钟，办公无线漫游时延 92ms 至 136ms。                              "
+                    "## 遗留事项与建议                              "
+                    "- 食堂前厅与广场区域建议在装修和活动场景稳定后补做一次无线复测。                              "
+                    "- 第三方系统的临时放通策略需纳入月度审查，避免再次累积例外规则。"
+                ),
+            }
+        ],
+    )
+
+    assert focus_page == 1
+    assert excerpt == "- 食堂前厅与广场区域建议在装修和活动场景稳定后补做一次无线复测。"
+
+
 def test_answer_question_uses_description_selection_for_cross_language_query(
     tmp_path, monkeypatch
 ):
@@ -332,6 +449,70 @@ def test_answer_question_uses_description_selection_for_cross_language_query(
             "documentId": "doc_acceptance",
             "documentName": "acceptance.pdf",
             "pages": "1",
+            "focusPage": 1,
+            "excerpt": "All deliverables must pass review.",
         }
     ]
     assert seen_models == ["gpt-retrieval"]
+
+
+def test_answer_question_evidence_mode_returns_path_and_content_metadata(
+    tmp_path, monkeypatch
+):
+    db_path = _seed_retrieval_db(tmp_path)
+    _insert_ready_document(
+        db_path,
+        document_id="doc_acceptance",
+        file_name="acceptance.pdf",
+        doc_description="Acceptance criteria and handover evidence.",
+        structure_json=json.dumps([{"title": "Acceptance"}]),
+        pages_json=json.dumps([{"page": 1, "content": "Acceptance content"}]),
+        source_relative_path="Alpha/delivery/acceptance.pdf",
+        project_relative_path="delivery/acceptance.pdf",
+        evidence_kind="pdf_text",
+        visual_assets_json=json.dumps([{"path": "/data/projects/Alpha/site.png"}]),
+    )
+
+    monkeypatch.setattr(
+        "services.retrieval_api.query_engine.select_candidate_documents",
+        lambda _query, docs, limit=5, model=None: docs[:1],
+    )
+    monkeypatch.setattr(
+        "services.retrieval_api.query_engine.choose_page_window",
+        lambda _query, _doc: "1",
+    )
+    monkeypatch.setattr(
+        "services.retrieval_api.query_engine._load_page_excerpt",
+        lambda _document, _pages: [{"page": 1, "content": "Acceptance content"}],
+    )
+
+    result = answer_question(
+        str(db_path),
+        "find acceptance evidence",
+        ["proj_1"],
+        mode="evidence",
+    )
+
+    assert result["answer"] == ""
+    assert result["citations"] == []
+    assert result["selectedDocuments"] == [
+        {
+            "documentId": "doc_acceptance",
+            "sourceRelativePath": "Alpha/delivery/acceptance.pdf",
+        }
+    ]
+    assert result["evidence"] == [
+        {
+            "projectId": "proj_1",
+            "projectName": "Alpha",
+            "documentId": "doc_acceptance",
+            "documentName": "acceptance.pdf",
+            "sourceRelativePath": "Alpha/delivery/acceptance.pdf",
+            "projectRelativePath": "delivery/acceptance.pdf",
+            "pages": "1",
+            "evidenceKind": "pdf_text",
+            "excerpt": "Acceptance content",
+            "content": "Acceptance content",
+            "visualAssets": [{"path": "/data/projects/Alpha/site.png"}],
+        }
+    ]

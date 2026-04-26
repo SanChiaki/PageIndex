@@ -24,7 +24,15 @@ def _tokenize_query(text: str) -> list[str]:
 
 def keyword_score(query: str, doc: dict) -> int:
     tokens = _tokenize_query(query)
-    haystack = f"{doc.get('file_name', '')} {doc.get('doc_description', '')}".lower()
+    haystack = " ".join(
+        [
+            doc.get("project_name", ""),
+            doc.get("file_name", ""),
+            doc.get("project_relative_path", ""),
+            doc.get("source_relative_path", ""),
+            doc.get("doc_description", ""),
+        ]
+    ).lower()
     counts = Counter(tokens)
     return sum(weight for token, weight in counts.items() if token in haystack)
 
@@ -42,7 +50,10 @@ def _selection_prompt(query: str, docs: list[dict]) -> str:
     candidates = [
         {
             "doc_id": doc.get("id", ""),
+            "project_name": doc.get("project_name", ""),
             "doc_name": doc.get("file_name", ""),
+            "project_relative_path": doc.get("project_relative_path", ""),
+            "source_relative_path": doc.get("source_relative_path", ""),
             "doc_description": doc.get("doc_description", ""),
         }
         for doc in docs
@@ -51,7 +62,7 @@ def _selection_prompt(query: str, docs: list[dict]) -> str:
 You are selecting candidate documents before PageIndex tree retrieval.
 
 Choose the document IDs that are most likely to contain information needed to answer the query.
-Use the file name and one-sentence document description only.
+Use the project name, relative paths, file name, and one-sentence document description.
 The query and the document descriptions may be written in different languages.
 Prefer recall over precision: include a document if it may plausibly help answer the query.
 

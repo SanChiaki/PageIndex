@@ -1,8 +1,7 @@
 import path from "node:path";
 import { defineConfig } from "@playwright/test";
 
-// Playwright loads this config via Node, so prefer CJS-friendly primitives.
-// We also assume this is executed with CWD=web (via `pnpm -C web e2e`).
+// We assume this is executed with CWD=web (via `pnpm -C web e2e`).
 const repoRoot = path.resolve(process.cwd(), "..");
 const e2eVarRoot = path.join(repoRoot, "var-e2e");
 
@@ -27,4 +26,4 @@ const config = defineConfig({
   },
 });
 
-export = config;
+export default config;

@@ -20,11 +20,11 @@ export function AppShell({
         onToggleCollapse={() => setCollapsed((value) => !value)}
       />
       <main
-        className={`relative min-h-screen px-4 pb-8 pt-6 transition-[margin] md:px-8 md:pb-12 md:pt-8 ${
+        className={`relative min-h-screen px-4 pb-8 pt-4 transition-[margin] md:px-8 md:pb-10 md:pt-4 ${
           collapsed ? "md:ml-[6.75rem]" : "md:ml-[18.5rem]"
         }`}
       >
-        <div className="mx-auto w-full max-w-[1180px]">{children}</div>
+        <div className="mx-auto w-full max-w-[1280px]">{children}</div>
       </main>
     </div>
   );

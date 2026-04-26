@@ -75,4 +75,50 @@ describe("migrateDatabase", () => {
     expect(table?.name).toBe("projects");
     db.close();
   });
+
+  it("creates directory source metadata and index run observability fields", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-migrate-observe-"));
+    tempDirs.push(dir);
+
+    const dbPath = path.join(dir, "app.db");
+    migrateDatabase(dbPath);
+    migrateDatabase(dbPath);
+
+    const db = new Database(dbPath, { readonly: true });
+    const documentColumns = db
+      .prepare("PRAGMA table_info(documents)")
+      .all()
+      .map((row: { name: string }) => row.name);
+    const indexColumns = db
+      .prepare("PRAGMA table_info(document_indexes)")
+      .all()
+      .map((row: { name: string }) => row.name);
+    const runTable = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+      .get("document_index_runs") as { name: string } | undefined;
+
+    expect(documentColumns).toEqual(
+      expect.arrayContaining([
+        "source_kind",
+        "source_relative_path",
+        "project_relative_path",
+        "content_hash",
+        "media_type",
+        "import_status",
+        "last_index_duration_ms",
+        "last_index_total_tokens",
+        "last_index_llm_call_count",
+        "last_indexed_at",
+      ]),
+    );
+    expect(indexColumns).toEqual(
+      expect.arrayContaining([
+        "evidence_kind",
+        "visual_assets_json",
+        "source_metadata_json",
+      ]),
+    );
+    expect(runTable?.name).toBe("document_index_runs");
+    db.close();
+  });
 });

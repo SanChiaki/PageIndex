@@ -16,6 +16,20 @@ def test_keyword_score_prefers_matching_description():
     assert keyword_score(query, doc) > 0
 
 
+def test_keyword_score_matches_project_relative_path():
+    doc = {
+        "id": "doc_1",
+        "project_id": "proj_1",
+        "file_name": "report.pdf",
+        "project_name": "Alpha",
+        "project_relative_path": "delivery/acceptance/report.pdf",
+        "source_relative_path": "Alpha/delivery/acceptance/report.pdf",
+        "doc_description": "Network delivery evidence.",
+    }
+
+    assert keyword_score("acceptance handover", doc) > 0
+
+
 def test_select_candidate_documents_limits_results():
     docs = [
         {
@@ -36,13 +50,19 @@ def test_select_candidate_documents_uses_llm_description_selection(monkeypatch):
         {
             "id": "doc_scope",
             "project_id": "proj_1",
+            "project_name": "Alpha",
             "file_name": "project-scope.pdf",
+            "project_relative_path": "planning/project-scope.pdf",
+            "source_relative_path": "Alpha/planning/project-scope.pdf",
             "doc_description": "Project scope, milestones, and staffing plan.",
         },
         {
             "id": "doc_acceptance",
             "project_id": "proj_1",
+            "project_name": "Alpha",
             "file_name": "acceptance-criteria.pdf",
+            "project_relative_path": "delivery/acceptance-criteria.pdf",
+            "source_relative_path": "Alpha/delivery/acceptance-criteria.pdf",
             "doc_description": "Acceptance criteria, completion checklist, and review standards.",
         },
     ]
@@ -51,6 +71,8 @@ def test_select_candidate_documents_uses_llm_description_selection(monkeypatch):
         assert model == "gpt-retrieval"
         assert "这个项目的验收标准是什么？" in prompt
         assert "acceptance-criteria.pdf" in prompt
+        assert "delivery/acceptance-criteria.pdf" in prompt
+        assert "Alpha/delivery/acceptance-criteria.pdf" in prompt
         return '{"thinking":"doc_acceptance matches acceptance criteria","answer":["doc_acceptance"]}'
 
     monkeypatch.setattr("pageindex.utils.llm_completion", fake_llm_completion)

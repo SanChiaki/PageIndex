@@ -20,17 +20,17 @@ export function SidebarNav({
   conversations: SidebarConversation[];
   onToggleCollapse: () => void;
 }) {
-  const [themeMode, setThemeMode] = useState<"night" | "dawn">("night");
+  const [themeMode, setThemeMode] = useState<"light" | "focus">("light");
 
   return (
     <aside
-      className={`w-full rounded-b-[2rem] border border-[var(--pi-border)] bg-[var(--pi-panel)] px-4 py-4 backdrop-blur-xl transition-[width] md:fixed md:inset-y-4 md:left-4 md:rounded-[2rem] md:px-3 md:py-4 ${
+      className={`w-full rounded-b-[2rem] border border-[var(--pi-border)] bg-[rgba(255,255,255,0.78)] px-4 py-4 shadow-[0_24px_70px_rgba(65,88,130,0.14)] ring-1 ring-white/70 backdrop-blur-xl transition-[width] md:fixed md:inset-y-4 md:left-4 md:rounded-[2rem] md:px-3 md:py-4 ${
         collapsed ? "md:w-[5.75rem]" : "md:w-[17.5rem]"
       }`}
     >
       <div className="flex h-full flex-col">
-        <div className="mb-4 flex items-center gap-3 rounded-2xl border border-[var(--pi-border)] bg-[rgba(20,30,47,0.72)] px-3 py-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-[var(--pi-border-strong)] bg-[rgba(28,44,73,0.92)] text-sm font-semibold text-[var(--pi-ink)]">
+        <div className="mb-4 flex items-center gap-3 rounded-2xl border border-[var(--pi-border)] bg-white/76 px-3 py-3 shadow-[0_10px_30px_rgba(65,88,130,0.08)]">
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-[var(--pi-border-strong)] bg-[var(--pi-brand)] text-sm font-semibold text-white shadow-[0_12px_28px_rgba(37,99,235,0.24)]">
             PI
           </div>
           {!collapsed ? (
@@ -45,7 +45,7 @@ export function SidebarNav({
             type="button"
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             onClick={onToggleCollapse}
-            className="ml-auto inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--pi-border)] bg-[rgba(14,22,36,0.9)] text-[var(--pi-ink)] transition hover:border-[var(--pi-border-strong)] hover:bg-[rgba(20,32,51,0.95)]"
+            className="ml-auto inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--pi-border)] bg-[var(--pi-bg-soft)] text-[var(--pi-ink)] transition hover:border-[var(--pi-border-strong)] hover:bg-white"
           >
             <span aria-hidden="true" className="text-base leading-none">
               {collapsed ? "⟩" : "⟨"}
@@ -56,7 +56,7 @@ export function SidebarNav({
         <nav className="space-y-2">
           <Link
             href="/chat"
-            className={`flex rounded-2xl border border-[var(--pi-border-strong)] bg-[linear-gradient(135deg,rgba(64,126,255,0.85),rgba(45,87,186,0.86))] text-sm font-semibold text-white shadow-[0_12px_38px_rgba(43,108,255,0.32)] transition hover:brightness-105 ${
+            className={`flex rounded-2xl border border-[var(--pi-border-strong)] bg-[var(--pi-brand)] text-sm font-semibold text-white shadow-[0_14px_34px_rgba(37,99,235,0.24)] transition hover:-translate-y-0.5 hover:brightness-105 ${
               collapsed
                 ? "items-center justify-center px-0 py-3"
                 : "items-center justify-between px-4 py-3"
@@ -67,7 +67,7 @@ export function SidebarNav({
           </Link>
           <Link
             href="/projects"
-            className={`block rounded-2xl border border-[var(--pi-border)] bg-[rgba(18,27,42,0.74)] text-sm text-[var(--pi-ink)] transition hover:border-[var(--pi-border-strong)] hover:bg-[rgba(26,37,58,0.84)] ${
+            className={`block rounded-2xl border border-[var(--pi-border)] bg-white/64 text-sm text-[var(--pi-ink)] transition hover:border-[var(--pi-border-strong)] hover:bg-white ${
               collapsed ? "px-0 py-3 text-center" : "px-4 py-3"
             }`}
           >
@@ -96,20 +96,20 @@ export function SidebarNav({
             <button
               type="button"
               aria-label="Open settings"
-              className="rounded-xl border border-[var(--pi-border)] bg-[rgba(16,24,38,0.75)] px-3 py-2 text-xs font-medium text-[var(--pi-ink)] transition hover:border-[var(--pi-border-strong)] hover:bg-[rgba(24,35,54,0.9)]"
+              className="rounded-xl border border-[var(--pi-border)] bg-white/64 px-3 py-2 text-xs font-medium text-[var(--pi-ink)] transition hover:border-[var(--pi-border-strong)] hover:bg-white"
             >
               {collapsed ? "S" : "Settings"}
             </button>
             <button
               type="button"
               aria-label="Switch theme"
-              aria-pressed={themeMode === "dawn"}
+              aria-pressed={themeMode === "focus"}
               onClick={() =>
-                setThemeMode((value) => (value === "night" ? "dawn" : "night"))
+                setThemeMode((value) => (value === "light" ? "focus" : "light"))
               }
-              className="rounded-xl border border-[var(--pi-border)] bg-[rgba(16,24,38,0.75)] px-3 py-2 text-xs font-medium text-[var(--pi-ink)] transition hover:border-[var(--pi-border-strong)] hover:bg-[rgba(24,35,54,0.9)]"
+              className="rounded-xl border border-[var(--pi-border)] bg-white/64 px-3 py-2 text-xs font-medium text-[var(--pi-ink)] transition hover:border-[var(--pi-border-strong)] hover:bg-white"
             >
-              {collapsed ? "T" : `Theme · ${themeMode === "night" ? "Night" : "Dawn"}`}
+              {collapsed ? "T" : `Tone · ${themeMode === "light" ? "Light" : "Focus"}`}
             </button>
           </div>
         </footer>

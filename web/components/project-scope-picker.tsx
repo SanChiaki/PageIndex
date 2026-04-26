@@ -14,13 +14,16 @@ export function ProjectScopePicker({
   if (projects.length === 0) {
     return (
       <p className="text-xs text-[var(--pi-muted)]">
-        No projects yet. Create one in Projects to enable chat scope.
+        No projects yet. Retrieval will use all ready documents once they are indexed.
       </p>
     );
   }
 
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="rounded-full border border-[var(--pi-border)] bg-white/72 px-3 py-1.5 text-xs font-medium text-[var(--pi-muted)]">
+        {selectedProjectIds.length === 0 ? "All projects" : "Filtered"}
+      </span>
       {projects.map((project) => {
         const selected = selectedProjectIds.includes(project.id);
         return (
@@ -31,8 +34,8 @@ export function ProjectScopePicker({
             onClick={() => onToggle(project.id)}
             className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
               selected
-                ? "border-[var(--pi-border-strong)] bg-[rgba(63,126,255,0.28)] text-[var(--pi-ink)]"
-                : "border-[var(--pi-border)] bg-[rgba(14,22,35,0.62)] text-[var(--pi-muted)] hover:border-[var(--pi-border-strong)] hover:text-[var(--pi-ink)]"
+                ? "border-[var(--pi-border-strong)] bg-[var(--pi-brand-soft)] text-[var(--pi-ink)]"
+                : "border-[var(--pi-border)] bg-white/72 text-[var(--pi-muted)] hover:border-[var(--pi-border-strong)] hover:bg-white hover:text-[var(--pi-ink)]"
             }`}
           >
             {project.name}

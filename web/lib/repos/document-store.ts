@@ -16,6 +16,16 @@ export function createDocumentRecord(
     storagePath: string;
     mimeType: string;
     fileSize: number;
+    sourceKind?: string;
+    sourceRoot?: string | null;
+    sourceRelativePath?: string | null;
+    projectRelativePath?: string | null;
+    contentHash?: string | null;
+    sourceMtime?: string | null;
+    sourceSize?: number | null;
+    mediaType?: string;
+    importStatus?: string;
+    importError?: string | null;
   },
 ) {
   const db = open(dbPath);
@@ -28,6 +38,16 @@ export function createDocumentRecord(
     storage_path: input.storagePath,
     mime_type: input.mimeType,
     file_size: input.fileSize,
+    source_kind: input.sourceKind ?? "upload",
+    source_root: input.sourceRoot ?? null,
+    source_relative_path: input.sourceRelativePath ?? null,
+    project_relative_path: input.projectRelativePath ?? null,
+    content_hash: input.contentHash ?? null,
+    source_mtime: input.sourceMtime ?? null,
+    source_size: input.sourceSize ?? null,
+    media_type: input.mediaType ?? inferMediaType(input.mimeType, input.fileName),
+    import_status: input.importStatus ?? "imported",
+    import_error: input.importError ?? null,
     status: "uploaded",
     created_at: now,
     updated_at: now,
@@ -36,10 +56,15 @@ export function createDocumentRecord(
   db.prepare(
     `INSERT INTO documents (
        id, project_id, owner_user_id, file_name, storage_path, mime_type,
-       file_size, status, created_at, updated_at
+       file_size, source_kind, source_root, source_relative_path,
+       project_relative_path, content_hash, source_mtime, source_size,
+       media_type, import_status, import_error, status, created_at, updated_at
      ) VALUES (
        @id, @project_id, @owner_user_id, @file_name, @storage_path, @mime_type,
-       @file_size, @status, @created_at, @updated_at
+       @file_size, @source_kind, @source_root, @source_relative_path,
+       @project_relative_path, @content_hash, @source_mtime, @source_size,
+       @media_type, @import_status, @import_error, @status, @created_at,
+       @updated_at
      )`,
   ).run(row);
 
@@ -50,6 +75,21 @@ export function createDocumentRecord(
     fileName: row.file_name,
     status: row.status,
   };
+}
+
+function inferMediaType(mimeType: string, fileName: string) {
+  const lowerName = fileName.toLowerCase();
+  if (mimeType === "application/pdf" || lowerName.endsWith(".pdf")) return "pdf";
+  if (
+    mimeType === "text/markdown" ||
+    lowerName.endsWith(".md") ||
+    lowerName.endsWith(".markdown")
+  ) {
+    return "markdown";
+  }
+  if (mimeType.startsWith("image/")) return "image";
+  if (mimeType.startsWith("text/")) return "text";
+  return "unsupported";
 }
 
 export class InvalidPagesFilterError extends Error {}
@@ -102,7 +142,11 @@ export function listDocumentsByProject(dbPath: string, projectId: string) {
   const db = open(dbPath);
   const rows = db
     .prepare(
-      `SELECT id, file_name, page_count, status, created_at, updated_at
+      `SELECT id, file_name, page_count, status, created_at, updated_at,
+              source_kind, source_relative_path, project_relative_path,
+              media_type, import_status, import_error,
+              last_index_duration_ms, last_index_total_tokens,
+              last_index_llm_call_count, last_indexed_at
          FROM documents
         WHERE project_id = ?
           AND deleted_at IS NULL
@@ -115,6 +159,16 @@ export function listDocumentsByProject(dbPath: string, projectId: string) {
     status: string;
     created_at: string;
     updated_at: string;
+    source_kind: string;
+    source_relative_path: string | null;
+    project_relative_path: string | null;
+    media_type: string;
+    import_status: string;
+    import_error: string | null;
+    last_index_duration_ms: number | null;
+    last_index_total_tokens: number | null;
+    last_index_llm_call_count: number | null;
+    last_indexed_at: string | null;
   }>;
 
   db.close();
@@ -123,9 +177,83 @@ export function listDocumentsByProject(dbPath: string, projectId: string) {
     fileName: row.file_name,
     pageCount: row.page_count ?? 0,
     status: row.status,
+    sourceKind: row.source_kind,
+    sourceRelativePath: row.source_relative_path,
+    projectRelativePath: row.project_relative_path,
+    mediaType: row.media_type,
+    importStatus: row.import_status,
+    importError: row.import_error,
+    lastIndexDurationMs: row.last_index_duration_ms,
+    lastIndexTotalTokens: row.last_index_total_tokens,
+    lastIndexLlmCallCount: row.last_index_llm_call_count,
+    lastIndexedAt: row.last_indexed_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }));
+}
+
+export function listDocumentIndexRuns(dbPath: string, documentId: string) {
+  const db = open(dbPath);
+  const rows = db
+    .prepare(
+      `SELECT id, status, started_at, finished_at, duration_ms,
+              text_extraction_ms, pageindex_ms, vision_extraction_ms,
+              persist_ms, llm_call_count, prompt_tokens, completion_tokens,
+              total_tokens, token_source, models_json, error_message
+         FROM document_index_runs
+        WHERE document_id = ?
+        ORDER BY started_at DESC`,
+    )
+    .all(documentId) as Array<{
+    id: string;
+    status: string;
+    started_at: string;
+    finished_at: string | null;
+    duration_ms: number;
+    text_extraction_ms: number;
+    pageindex_ms: number;
+    vision_extraction_ms: number;
+    persist_ms: number;
+    llm_call_count: number;
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+    token_source: string;
+    models_json: string;
+    error_message: string | null;
+  }>;
+
+  db.close();
+  return rows.map((row) => ({
+    id: row.id,
+    status: row.status,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+    durationMs: row.duration_ms,
+    textExtractionMs: row.text_extraction_ms,
+    pageindexMs: row.pageindex_ms,
+    visionExtractionMs: row.vision_extraction_ms,
+    persistMs: row.persist_ms,
+    llmCallCount: row.llm_call_count,
+    promptTokens: row.prompt_tokens,
+    completionTokens: row.completion_tokens,
+    totalTokens: row.total_tokens,
+    tokenSource: row.token_source,
+    models: parseModelsJson(row.models_json),
+    errorMessage: row.error_message,
+  }));
+}
+
+function parseModelsJson(value: string) {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+    return parsed as Record<string, number>;
+  } catch {
+    return {};
+  }
 }
 
 export function getDocumentDetail(dbPath: string, documentId: string) {

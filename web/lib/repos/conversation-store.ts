@@ -70,7 +70,7 @@ export function listConversations(dbPath: string, ownerUserId: string) {
     updatedAt: row.updated_at,
     scopeLabel:
       row.project_count === 0
-        ? "No project"
+        ? "All projects"
         : row.project_count === 1
           ? row.first_project_name ?? "Unknown project"
           : "Multiple projects",

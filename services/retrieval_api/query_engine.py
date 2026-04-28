@@ -1,5 +1,7 @@
 import json
+from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
+import logging
 import re
 from typing import Any
 
@@ -9,6 +11,8 @@ from services.retrieval_api.select_documents import select_candidate_documents
 
 MAX_PAGE_RANGE_SIZE = 1000
 MAX_PAGE_SELECTION_SIZE = 1000
+MAX_PARALLEL_DOCUMENT_RETRIEVALS = 5
+logger = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=1)
@@ -335,6 +339,83 @@ def _join_evidence_content(evidence: list[dict[str, Any]]) -> str:
     )
 
 
+def _build_document_evidence(
+    query: str,
+    document: dict[str, Any],
+    mode: str,
+) -> dict[str, Any] | None:
+    try:
+        pages = choose_page_window(query, document)
+        fallback_pages = _default_page_window(document)
+        if not _is_valid_page_window(pages, document):
+            pages = fallback_pages
+        evidence = _load_page_excerpt(document, pages)
+        if not evidence and pages != fallback_pages:
+            pages = fallback_pages
+            evidence = _load_page_excerpt(document, pages)
+        if not evidence:
+            return None
+        focus_page, excerpt = _select_citation_anchor(query, evidence)
+        context_block = {
+            "project": document["project_name"],
+            "document": document["file_name"],
+            "sourceRelativePath": document.get("source_relative_path"),
+            "projectRelativePath": document.get("project_relative_path"),
+            "pages": pages,
+            "evidence": evidence,
+        }
+        citation = None
+        if mode != "evidence":
+            citation = build_citation(
+                project={"id": document["project_id"], "name": document["project_name"]},
+                document={"id": document["id"], "file_name": document["file_name"]},
+                pages=pages,
+                focus_page=focus_page,
+                excerpt=excerpt,
+            )
+        evidence_block = {
+            "projectId": document["project_id"],
+            "projectName": document["project_name"],
+            "documentId": document["id"],
+            "documentName": document["file_name"],
+            "sourceRelativePath": document.get("source_relative_path"),
+            "projectRelativePath": document.get("project_relative_path"),
+            "pages": pages,
+            "evidenceKind": document.get("evidence_kind") or "text",
+            "excerpt": excerpt,
+            "content": _join_evidence_content(evidence),
+            "visualAssets": document.get("visual_assets", []),
+        }
+        return {
+            "document": document,
+            "contextBlock": context_block,
+            "citation": citation,
+            "evidenceBlock": evidence_block,
+        }
+    except Exception:
+        logger.exception(
+            "Failed to build retrieval evidence for document %s",
+            document.get("id"),
+        )
+        return None
+
+
+def _build_selected_documents_evidence(
+    query: str,
+    selected: list[dict[str, Any]],
+    mode: str,
+) -> list[dict[str, Any]]:
+    if not selected:
+        return []
+    max_workers = min(MAX_PARALLEL_DOCUMENT_RETRIEVALS, len(selected))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        results = executor.map(
+            lambda document: _build_document_evidence(query, document, mode),
+            selected,
+        )
+        return [result for result in results if result is not None]
+
+
 def answer_question(
     db_path: str,
     query: str,
@@ -404,58 +485,15 @@ def answer_question(
             "evidence": [],
         }
 
-    context_blocks = []
-    citations = []
-    evidence_blocks = []
-    used_documents = []
-    for document in selected:
-        pages = choose_page_window(query, document)
-        fallback_pages = _default_page_window(document)
-        if not _is_valid_page_window(pages, document):
-            pages = fallback_pages
-        evidence = _load_page_excerpt(document, pages)
-        if not evidence and pages != fallback_pages:
-            pages = fallback_pages
-            evidence = _load_page_excerpt(document, pages)
-        if not evidence:
-            continue
-        focus_page, excerpt = _select_citation_anchor(query, evidence)
-        context_blocks.append(
-            {
-                "project": document["project_name"],
-                "document": document["file_name"],
-                "sourceRelativePath": document.get("source_relative_path"),
-                "projectRelativePath": document.get("project_relative_path"),
-                "pages": pages,
-                "evidence": evidence,
-            }
-        )
-        if mode != "evidence":
-            citations.append(
-                build_citation(
-                    project={"id": document["project_id"], "name": document["project_name"]},
-                    document={"id": document["id"], "file_name": document["file_name"]},
-                    pages=pages,
-                    focus_page=focus_page,
-                    excerpt=excerpt,
-                )
-            )
-        evidence_blocks.append(
-            {
-                "projectId": document["project_id"],
-                "projectName": document["project_name"],
-                "documentId": document["id"],
-                "documentName": document["file_name"],
-                "sourceRelativePath": document.get("source_relative_path"),
-                "projectRelativePath": document.get("project_relative_path"),
-                "pages": pages,
-                "evidenceKind": document.get("evidence_kind") or "text",
-                "excerpt": excerpt,
-                "content": _join_evidence_content(evidence),
-                "visualAssets": document.get("visual_assets", []),
-            }
-        )
-        used_documents.append(document)
+    document_results = _build_selected_documents_evidence(query, selected, mode)
+    context_blocks = [result["contextBlock"] for result in document_results]
+    citations = [
+        result["citation"]
+        for result in document_results
+        if result["citation"] is not None
+    ]
+    evidence_blocks = [result["evidenceBlock"] for result in document_results]
+    used_documents = [result["document"] for result in document_results]
 
     if not used_documents:
         return {

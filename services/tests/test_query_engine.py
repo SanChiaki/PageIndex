@@ -1,5 +1,7 @@
 import json
 import sqlite3
+import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -515,4 +517,61 @@ def test_answer_question_evidence_mode_returns_path_and_content_metadata(
             "content": "Acceptance content",
             "visualAssets": [{"path": "/data/projects/Alpha/site.png"}],
         }
+    ]
+
+
+def test_answer_question_processes_selected_documents_concurrently_and_preserves_order(
+    tmp_path,
+    monkeypatch,
+):
+    db_path = _seed_retrieval_db(tmp_path)
+    for index in range(3):
+        _insert_ready_document(
+            db_path,
+            document_id=f"doc_{index}",
+            file_name=f"doc-{index}.pdf",
+            doc_description="handover evidence",
+            structure_json=json.dumps([{"title": f"Doc {index}"}]),
+            pages_json=json.dumps([{"page": 1, "content": f"evidence {index}"}]),
+        )
+
+    monkeypatch.setattr(
+        "services.retrieval_api.query_engine.select_candidate_documents",
+        lambda _query, docs, limit=5, model=None: docs[:3],
+    )
+    monkeypatch.setattr(
+        "services.retrieval_api.query_engine._load_page_excerpt",
+        lambda document, _pages: [
+            {"page": 1, "content": f"evidence for {document['id']}"}
+        ],
+    )
+
+    lock = threading.Lock()
+    active = 0
+    max_active = 0
+
+    def slow_choose_page_window(_query, _document):
+        nonlocal active, max_active
+        with lock:
+            active += 1
+            max_active = max(max_active, active)
+        try:
+            time.sleep(0.05)
+            return "1"
+        finally:
+            with lock:
+                active -= 1
+
+    monkeypatch.setattr(
+        "services.retrieval_api.query_engine.choose_page_window",
+        slow_choose_page_window,
+    )
+
+    result = answer_question(str(db_path), "handover evidence", ["proj_1"], mode="evidence")
+
+    assert max_active > 1
+    assert [item["documentId"] for item in result["evidence"]] == [
+        "doc_0",
+        "doc_1",
+        "doc_2",
     ]

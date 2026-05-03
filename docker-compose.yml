@@ -14,7 +14,8 @@ services:
       - ./var:/app/var
       - ${PROJECTS_ROOT:-./fixtures/projects}:/data/projects:ro
     depends_on:
-      - retrieval-api
+      retrieval-api:
+        condition: service_healthy
 
   retrieval-api:
     build: .
@@ -34,6 +35,16 @@ services:
     volumes:
       - ./var:/app/var
       - ${PROJECTS_ROOT:-./fixtures/projects}:/data/projects:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health', timeout=2).read()\"",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
 
   index-worker:
     build: .
@@ -53,7 +64,8 @@ services:
       - ./var:/app/var
       - ${PROJECTS_ROOT:-./fixtures/projects}:/data/projects:ro
     depends_on:
-      - retrieval-api
+      retrieval-api:
+        condition: service_healthy
 
   directory-watcher:
     build: .
@@ -68,4 +80,5 @@ services:
       - ./var:/app/var
       - ${PROJECTS_ROOT:-./fixtures/projects}:/data/projects:ro
     depends_on:
-      - retrieval-api
+      retrieval-api:
+        condition: service_healthy

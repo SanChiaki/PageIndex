@@ -297,12 +297,13 @@ You can follow these steps to generate a PageIndex tree from a PDF document.
 pip3 install --upgrade -r requirements.txt
 ```
 
-### 2. Set your LLM API key
+### 2. Set your LLM API credentials
 
-Create a `.env` file in the root directory with your LLM API key, with multi-LLM support via [LiteLLM](https://docs.litellm.ai/docs/providers):
+Create a `.env` file in the root directory with your LLM API credentials. PageIndex maps these variables internally for LiteLLM:
 
 ```bash
-OPENAI_API_KEY=your_openai_key_here
+PAGEINDEX_LLM_API_KEY=your_llm_key_here
+PAGEINDEX_LLM_BASE_URL=https://your-provider.example/v1
 ```
 
 ### 3. Generate PageIndex structure for your PDF

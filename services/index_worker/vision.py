@@ -7,8 +7,11 @@ from time import perf_counter
 
 import litellm
 
+from pageindex.env import configure_litellm_environment
 from services.common.index_metrics import current_index_metrics
 from services.common.settings import VISION_EXTRACTION_ENABLED, VISION_MODEL
+
+configure_litellm_environment()
 
 
 class VisionExtractionSkipped(RuntimeError):

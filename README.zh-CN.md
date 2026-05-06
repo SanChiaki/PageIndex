@@ -149,12 +149,13 @@ PageIndex 可以把冗长的 PDF 文档转换成一种语义化的 **树结构**
 pip3 install --upgrade -r requirements.txt
 ```
 
-### 2. 配置你的 LLM API Key
+### 2. 配置你的 LLM API 凭据
 
-在项目根目录创建 `.env` 文件，并写入你的 LLM API Key。项目通过 [LiteLLM](https://docs.litellm.ai/docs/providers) 支持多种模型提供方：
+在项目根目录创建 `.env` 文件，并写入你的 LLM API 凭据。PageIndex 会在内部为 LiteLLM 映射这些变量：
 
 ```bash
-OPENAI_API_KEY=your_openai_key_here
+PAGEINDEX_LLM_API_KEY=your_llm_key_here
+PAGEINDEX_LLM_BASE_URL=https://your-provider.example/v1
 ```
 
 ### 3. 为 PDF 生成 PageIndex 结构

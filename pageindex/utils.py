@@ -17,6 +17,7 @@ import yaml
 from pathlib import Path
 from types import SimpleNamespace as config
 from time import perf_counter
+from .env import configure_litellm_environment
 
 try:
     from services.common.index_metrics import current_index_metrics
@@ -24,9 +25,7 @@ except Exception:
     def current_index_metrics():
         return None
 
-# Backward compatibility: support CHATGPT_API_KEY as alias for OPENAI_API_KEY
-if not os.getenv("OPENAI_API_KEY") and os.getenv("CHATGPT_API_KEY"):
-    os.environ["OPENAI_API_KEY"] = os.getenv("CHATGPT_API_KEY")
+configure_litellm_environment()
 
 litellm.drop_params = True
 

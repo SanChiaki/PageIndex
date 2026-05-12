@@ -86,17 +86,17 @@ export function DocumentUploadModal({ projectId }: { projectId: string }) {
         className="w-full max-w-md rounded-[1.8rem] border border-[var(--pi-border)] bg-[var(--pi-panel-strong)] p-6 shadow-[0_30px_70px_rgba(65,88,130,0.2)]"
       >
         <h2 id="document-upload-title" className="text-xl font-semibold text-[var(--pi-ink)]">
-          Upload PDF
+          Upload documents
         </h2>
         <p className="mt-2 text-sm text-[var(--pi-muted)]">
-          Select one or more PDF documents to start indexing.
+          Select PDF, Word, Excel, or PowerPoint files to start indexing.
         </p>
 
         <div className="mt-5 rounded-2xl border border-dashed border-[var(--pi-border)] bg-[var(--pi-bg-soft)] p-4">
           <input
             ref={fileInputRef}
             type="file"
-            accept="application/pdf"
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
             multiple
             className="hidden"
             onChange={(event) => {
@@ -110,7 +110,7 @@ export function DocumentUploadModal({ projectId }: { projectId: string }) {
             onClick={() => fileInputRef.current?.click()}
             className="rounded-xl border border-[var(--pi-border)] bg-white px-3 py-2 text-sm text-[var(--pi-ink)] transition hover:border-[var(--pi-border-strong)]"
           >
-            Choose PDF
+            Choose files
           </button>
           <p className="mt-3 text-xs text-[var(--pi-muted)]">
             {selectedFiles.length === 0
@@ -165,7 +165,7 @@ export function DocumentUploadModal({ projectId }: { projectId: string }) {
             disabled={selectedFiles.length === 0 || isSubmitting}
             className="rounded-xl border border-[var(--pi-brand)] bg-[var(--pi-brand)] px-3.5 py-2 text-sm font-semibold text-white transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isSubmitting ? "Uploading..." : "Upload PDFs"}
+            {isSubmitting ? "Uploading..." : "Upload files"}
           </button>
         </div>
       </form>

@@ -80,6 +80,7 @@ export function createDocumentRecord(
 function inferMediaType(mimeType: string, fileName: string) {
   const lowerName = fileName.toLowerCase();
   if (mimeType === "application/pdf" || lowerName.endsWith(".pdf")) return "pdf";
+  if (isOfficeDocument(mimeType, lowerName)) return "office";
   if (
     mimeType === "text/markdown" ||
     lowerName.endsWith(".md") ||
@@ -90,6 +91,27 @@ function inferMediaType(mimeType: string, fileName: string) {
   if (mimeType.startsWith("image/")) return "image";
   if (mimeType.startsWith("text/")) return "text";
   return "unsupported";
+}
+
+function isOfficeDocument(mimeType: string, lowerName: string) {
+  if (
+    lowerName.endsWith(".doc") ||
+    lowerName.endsWith(".docx") ||
+    lowerName.endsWith(".xls") ||
+    lowerName.endsWith(".xlsx") ||
+    lowerName.endsWith(".ppt") ||
+    lowerName.endsWith(".pptx")
+  ) {
+    return true;
+  }
+  return [
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ].includes(mimeType);
 }
 
 export class InvalidPagesFilterError extends Error {}

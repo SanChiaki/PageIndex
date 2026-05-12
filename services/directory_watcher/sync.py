@@ -17,6 +17,12 @@ DEMO_USER_ID = "user_demo"
 
 SUPPORTED_MEDIA_BY_EXTENSION = {
     ".pdf": "pdf",
+    ".doc": "office",
+    ".docx": "office",
+    ".xls": "office",
+    ".xlsx": "office",
+    ".ppt": "office",
+    ".pptx": "office",
     ".md": "markdown",
     ".markdown": "markdown",
     ".txt": "text",

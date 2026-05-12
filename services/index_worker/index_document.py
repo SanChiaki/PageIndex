@@ -14,6 +14,7 @@ from pageindex.page_index_md import md_to_tree
 from services.common.index_metrics import current_index_metrics, index_run_metrics
 from services.common.models import IndexedDocumentPayload
 from services.common.sqlite_store import open_db
+from services.index_worker.office_conversion import convert_office_to_pdf
 from services.index_worker.vision import VisionExtractionSkipped, extract_image_evidence_text
 
 
@@ -31,6 +32,8 @@ def build_pageindex_payload(file_path: str, document: dict | None = None) -> Ind
         return _build_text_payload(file_path, document)
     if media_type == "image":
         return _build_image_payload(file_path, document)
+    if media_type == "office":
+        return _build_office_payload(file_path, document)
     raise DocumentIndexSkipped(f"Unsupported media type for indexing: {media_type}")
 
 
@@ -46,6 +49,8 @@ def _infer_media_type(file_path: str, document: dict | None) -> str:
         return "text"
     if suffix in {".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff"}:
         return "image"
+    if suffix in {".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"}:
+        return "office"
     return "unsupported"
 
 
@@ -112,6 +117,26 @@ def _build_pdf_payload(file_path: str, document: dict | None) -> IndexedDocument
         "evidence_kind": "pdf_text",
         "visual_assets": [],
         "source_metadata": _source_metadata(document),
+    }
+
+
+def _build_office_payload(file_path: str, document: dict | None) -> IndexedDocumentPayload:
+    if document is None:
+        raise DocumentIndexSkipped("Office indexing requires document metadata.")
+    converted_pdf_path = convert_office_to_pdf(file_path, document)
+    payload = _build_pdf_payload(converted_pdf_path, document)
+    source_metadata = {
+        **payload.get("source_metadata", {}),
+        "sourceFileName": document.get("file_name") or Path(file_path).name,
+        "sourceStoragePath": file_path,
+        "sourceMediaType": document.get("media_type"),
+        "evidencePdfPath": converted_pdf_path,
+        "evidenceMediaType": "pdf",
+    }
+    return {
+        **payload,
+        "evidence_kind": "office_pdf_text",
+        "source_metadata": source_metadata,
     }
 
 

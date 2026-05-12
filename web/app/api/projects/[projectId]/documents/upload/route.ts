@@ -5,7 +5,7 @@ import { appConfig } from "@/lib/config";
 import { createDocumentRecord } from "@/lib/repos/document-store";
 import { createIndexJob } from "@/lib/repos/job-store";
 import { getProjectById } from "@/lib/repos/project-store";
-import { saveUploadedPdf, UploadValidationError } from "@/lib/storage/local-files";
+import { saveUploadedDocument, UploadValidationError } from "@/lib/storage/local-files";
 
 const demoUserId = "user_demo";
 
@@ -24,6 +24,30 @@ type FailedItem = {
 async function hasPdfSignature(file: File) {
   const header = Buffer.from(await file.slice(0, 5).arrayBuffer()).toString("utf8");
   return header === "%PDF-";
+}
+
+function inferUploadKind(file: File) {
+  const lowerName = file.name.toLowerCase();
+  if (file.type === "application/pdf" || lowerName.endsWith(".pdf")) return "pdf";
+  if (
+    lowerName.endsWith(".doc") ||
+    lowerName.endsWith(".docx") ||
+    lowerName.endsWith(".xls") ||
+    lowerName.endsWith(".xlsx") ||
+    lowerName.endsWith(".ppt") ||
+    lowerName.endsWith(".pptx") ||
+    [
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.ms-powerpoint",
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ].includes(file.type)
+  ) {
+    return "office";
+  }
+  return "unsupported";
 }
 
 async function removeStoredFile(storagePath: string) {
@@ -81,19 +105,23 @@ export async function POST(
 
   for (const file of files) {
     const fileName = file.name || "unknown.pdf";
+    const uploadKind = inferUploadKind(file);
 
-    if (file.type !== "application/pdf") {
-      failed.push({ fileName, error: "Only PDF uploads are supported." });
+    if (uploadKind === "unsupported") {
+      failed.push({
+        fileName,
+        error: "Unsupported file type. Upload PDF, Word, Excel, or PowerPoint files.",
+      });
       continue;
     }
-    if (!(await hasPdfSignature(file))) {
+    if (uploadKind === "pdf" && !(await hasPdfSignature(file))) {
       failed.push({ fileName, error: "Uploaded file is not a valid PDF." });
       continue;
     }
 
     let stored: { storagePath: string; fileSize: number };
     try {
-      stored = await saveUploadedPdf(projectId, file);
+      stored = await saveUploadedDocument(projectId, file);
     } catch (error) {
       if (error instanceof UploadValidationError) {
         failed.push({ fileName, error: error.message });
@@ -113,6 +141,7 @@ export async function POST(
         storagePath: stored.storagePath,
         mimeType: file.type,
         fileSize: stored.fileSize,
+        mediaType: uploadKind === "office" ? "office" : "pdf",
       });
     } catch {
       sawUnexpectedServerError = true;

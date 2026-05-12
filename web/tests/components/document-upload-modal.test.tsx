@@ -34,13 +34,13 @@ describe("DocumentUploadModal", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
 
-    const heading = screen.getByText("Upload PDF");
+    const heading = screen.getByText("Upload documents");
 
     expect(document.body).toContainElement(heading);
     expect(container).not.toContainElement(heading);
   });
 
-  it("shows file count and file names for multiple selected PDFs", async () => {
+  it("shows file count and file names for multiple selected documents", async () => {
     render(<DocumentUploadModal projectId="proj_1" />);
 
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
@@ -48,8 +48,8 @@ describe("DocumentUploadModal", () => {
     const alpha = new File([Buffer.from("%PDF-1.7\nalpha")], "alpha.pdf", {
       type: "application/pdf",
     });
-    const beta = new File([Buffer.from("%PDF-1.7\nbeta")], "beta.pdf", {
-      type: "application/pdf",
+    const beta = new File([Buffer.from("deck")], "plan.pptx", {
+      type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     });
 
     Object.defineProperty(input, "files", {
@@ -60,7 +60,7 @@ describe("DocumentUploadModal", () => {
 
     expect(screen.getByText("2 files selected")).toBeInTheDocument();
     expect(screen.getByText("alpha.pdf")).toBeInTheDocument();
-    expect(screen.getByText("beta.pdf")).toBeInTheDocument();
+    expect(screen.getByText("plan.pptx")).toBeInTheDocument();
   });
 
   it("submits all selected files and shows partial failure details", async () => {
@@ -101,7 +101,7 @@ describe("DocumentUploadModal", () => {
       value: [alpha, broken],
     });
     fireEvent.change(input);
-    fireEvent.click(screen.getByRole("button", { name: "Upload PDFs" }));
+    fireEvent.click(screen.getByRole("button", { name: "Upload files" }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -120,7 +120,7 @@ describe("DocumentUploadModal", () => {
       ),
     ).toBeInTheDocument();
     expect(routerMocks.refresh).toHaveBeenCalledTimes(1);
-    expect(screen.getByText("Upload PDF")).toBeInTheDocument();
+    expect(screen.getByText("Upload documents")).toBeInTheDocument();
   });
 
   it("closes the modal after a full-success upload", async () => {
@@ -153,13 +153,13 @@ describe("DocumentUploadModal", () => {
       value: [alpha],
     });
     fireEvent.change(input);
-    fireEvent.click(screen.getByRole("button", { name: "Upload PDFs" }));
+    fireEvent.click(screen.getByRole("button", { name: "Upload files" }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
     expect(routerMocks.refresh).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText("Upload PDF")).not.toBeInTheDocument();
+    expect(screen.queryByText("Upload documents")).not.toBeInTheDocument();
   });
 });

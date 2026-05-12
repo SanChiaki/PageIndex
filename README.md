@@ -30,7 +30,7 @@
 
 ## Project-Centric Knowledge Chat (Local Development)
 
-This branch includes a simple project-centric workflow in [`web/`](web): create projects, upload PDFs, let the index worker process them, then chat across all indexed projects or optionally narrow retrieval with a project scope.
+This branch includes a simple project-centric workflow in [`web/`](web): create projects, upload PDFs or Office files, let the index worker process them, then chat across all indexed projects or optionally narrow retrieval with a project scope.
 
 ### Services to Run
 
@@ -56,14 +56,15 @@ pnpm -C web dev
 ```
 
 Notes:
-- By default, all processes share the same on-disk state under `./var/` (SQLite DB + uploads). You can override with `APP_VAR_ROOT`, `APP_DB_PATH`, and `APP_UPLOAD_ROOT`.
+- By default, all processes share the same on-disk state under `./var/` (SQLite DB, uploads, and converted evidence PDFs). You can override with `APP_VAR_ROOT`, `APP_DB_PATH`, `APP_UPLOAD_ROOT`, and `APP_CONVERTED_ROOT`.
+- Office files (`.doc`, `.docx`, `.xls`, `.xlsx`, `.ppt`, `.pptx`) are converted to evidence PDFs through Gotenberg/LibreOffice before indexing. Citations point to the generated evidence PDF pages while the original Office file is retained as the source document.
 - The web app points to the retrieval API via `RETRIEVAL_API_BASE_URL` (default `http://127.0.0.1:8001`).
 
 ### End-to-End Workflow
 
 1. Open `http://localhost:3000/projects`.
 2. Click `New Project`.
-3. Open the project, upload a PDF, and wait until indexing completes.
+3. Open the project, upload a PDF or Office file, and wait until indexing completes.
 4. Open `http://localhost:3000/chat` and ask a question. Leave the scope picker empty to search all ready documents, or select one or more projects to narrow retrieval.
 
 ### Docker Directory Knowledge Service
@@ -74,6 +75,10 @@ Run the full local stack with a mounted project corpus:
 PROJECTS_ROOT=/absolute/path/to/projects docker compose up --build
 ```
 
+Docker publishes the web app, retrieval API, and Gotenberg on consecutive host
+ports `43170`, `43171`, and `43172` by default. Override them with `WEB_PORT`,
+`RETRIEVAL_API_PORT`, and `GOTENBERG_PORT`.
+
 The mounted folder must use first-level directories as projects:
 
 ```text
@@ -81,14 +86,15 @@ The mounted folder must use first-level directories as projects:
   ProjectA/
     delivery/report.md
     photos/site.png
+    office/scope.docx
   ProjectB/
     handover/report.pdf
 ```
 
 Docker services:
 
-- `web`: Next.js application on `http://localhost:3000`
-- `retrieval-api`: FastAPI retrieval API on `http://localhost:8001`
+- `web`: Next.js application on `http://localhost:43170`
+- `retrieval-api`: FastAPI retrieval API on `http://localhost:43171`
 - `index-worker`: PageIndex indexing worker
 - `directory-watcher`: startup scan plus continuous polling import
 
@@ -139,6 +145,7 @@ PageIndex core with:
 - PDF upload and indexing jobs
 - project-scoped chat with citations
 - local retrieval and indexing services
+- `gotenberg`: LibreOffice-backed Office-to-PDF conversion service on `http://localhost:43172`
 
 ## Local Services
 
@@ -158,7 +165,9 @@ Optional environment overrides:
 APP_VAR_ROOT="$PWD/var"
 APP_DB_PATH="$PWD/var/app.db"
 APP_UPLOAD_ROOT="$PWD/var/uploads"
+APP_CONVERTED_ROOT="$PWD/var/converted"
 RETRIEVAL_API_BASE_URL=http://127.0.0.1:8001
+GOTENBERG_URL=http://127.0.0.1:43172
 ```
 
 ### 2. Retrieval API
@@ -177,7 +186,7 @@ RETRIEVAL_API_BASE_URL=http://127.0.0.1:8001
 
 1. Open `http://localhost:3000/projects`.
 2. Create a project.
-3. Upload a PDF into that project.
+3. Upload a PDF or Office file into that project.
 4. Wait until the document status becomes `ready`.
 5. Open `http://localhost:3000/chat`.
 6. Ask a question directly to search all ready documents, or select project chips to narrow the retrieval scope.

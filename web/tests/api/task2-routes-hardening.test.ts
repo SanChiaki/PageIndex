@@ -271,6 +271,71 @@ describe("task2 route hardening", () => {
     expect(jobs.count).toBe(1);
   });
 
+  it("accepts Office uploads and stores their media type", async () => {
+    const { dir, dbPath } = makeTempDb();
+    mockConfig(dbPath, path.join(dir, "uploads"));
+    const project = createProject(dbPath, {
+      ownerUserId: "user_demo",
+      name: "Alpha",
+    });
+
+    const { POST } = await import(
+      "@/app/api/projects/[projectId]/documents/upload/route"
+    );
+    const form = new FormData();
+    form.append(
+      "files",
+      new File([Buffer.from("word body")], "scope.docx", {
+        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      }),
+    );
+    form.append(
+      "files",
+      new File([Buffer.from("legacy spreadsheet")], "budget.xls", {
+        type: "application/vnd.ms-excel",
+      }),
+    );
+
+    const response = await POST(
+      {
+        formData: async () => form,
+      } as Pick<Request, "formData"> as any,
+      { params: Promise.resolve({ projectId: project.id }) },
+    );
+    const json = await response.json();
+
+    const db = new Database(dbPath, { readonly: true });
+    const documents = db
+      .prepare(
+        `SELECT file_name, media_type, mime_type FROM documents ORDER BY file_name ASC`,
+      )
+      .all() as Array<{
+      file_name: string;
+      media_type: string;
+      mime_type: string;
+    }>;
+    db.close();
+
+    expect(response.status).toBe(201);
+    expect(json.failed).toEqual([]);
+    expect(json.uploaded.map((item: { fileName: string }) => item.fileName)).toEqual([
+      "scope.docx",
+      "budget.xls",
+    ]);
+    expect(documents).toEqual([
+      {
+        file_name: "budget.xls",
+        media_type: "office",
+        mime_type: "application/vnd.ms-excel",
+      },
+      {
+        file_name: "scope.docx",
+        media_type: "office",
+        mime_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      },
+    ]);
+  });
+
   it("returns 400 with an error when every file in the batch fails", async () => {
     const { dir, dbPath } = makeTempDb();
     mockConfig(dbPath, path.join(dir, "uploads"));
@@ -314,7 +379,7 @@ describe("task2 route hardening", () => {
       },
       {
         fileName: "notes.txt",
-        error: "Only PDF uploads are supported.",
+        error: "Unsupported file type. Upload PDF, Word, Excel, or PowerPoint files.",
       },
     ]);
   });
@@ -617,7 +682,7 @@ describe("task2 route hardening", () => {
     }));
     vi.doMock("@/lib/storage/local-files", () => ({
       UploadValidationError: class UploadValidationError extends Error {},
-      saveUploadedPdf: async () => {
+      saveUploadedDocument: async () => {
         throw new Error("disk failure");
       },
     }));

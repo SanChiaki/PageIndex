@@ -3,11 +3,12 @@ services:
     build: .
     command: ["sh", "./docker/entrypoints/web.sh"]
     ports:
-      - "3000:3000"
+      - "${WEB_PORT:-43170}:3000"
     environment:
       APP_VAR_ROOT: ${APP_VAR_ROOT:-/app/var}
       APP_DB_PATH: ${APP_DB_PATH:-/app/var/app.db}
       APP_UPLOAD_ROOT: ${APP_UPLOAD_ROOT:-/app/var/uploads}
+      APP_CONVERTED_ROOT: ${APP_CONVERTED_ROOT:-/app/var/converted}
       RETRIEVAL_API_BASE_URL: http://retrieval-api:8001
       PROJECTS_ROOT: /data/projects
     volumes:
@@ -21,11 +22,12 @@ services:
     build: .
     command: ["sh", "./docker/entrypoints/retrieval-api.sh"]
     ports:
-      - "8001:8001"
+      - "${RETRIEVAL_API_PORT:-43171}:8001"
     environment:
       APP_VAR_ROOT: ${APP_VAR_ROOT:-/app/var}
       APP_DB_PATH: ${APP_DB_PATH:-/app/var/app.db}
       APP_UPLOAD_ROOT: ${APP_UPLOAD_ROOT:-/app/var/uploads}
+      APP_CONVERTED_ROOT: ${APP_CONVERTED_ROOT:-/app/var/converted}
       PROJECTS_ROOT: /data/projects
       PAGEINDEX_LLM_API_KEY: ${PAGEINDEX_LLM_API_KEY:-}
       PAGEINDEX_LLM_BASE_URL: ${PAGEINDEX_LLM_BASE_URL:-}
@@ -52,7 +54,10 @@ services:
       APP_VAR_ROOT: ${APP_VAR_ROOT:-/app/var}
       APP_DB_PATH: ${APP_DB_PATH:-/app/var/app.db}
       APP_UPLOAD_ROOT: ${APP_UPLOAD_ROOT:-/app/var/uploads}
+      APP_CONVERTED_ROOT: ${APP_CONVERTED_ROOT:-/app/var/converted}
       PROJECTS_ROOT: /data/projects
+      GOTENBERG_URL: ${GOTENBERG_URL:-http://gotenberg:3000}
+      OFFICE_CONVERSION_TIMEOUT_SECONDS: ${OFFICE_CONVERSION_TIMEOUT_SECONDS:-120}
       PAGEINDEX_LLM_API_KEY: ${PAGEINDEX_LLM_API_KEY:-}
       PAGEINDEX_LLM_BASE_URL: ${PAGEINDEX_LLM_BASE_URL:-}
       VISION_MODEL: ${VISION_MODEL:-}
@@ -64,6 +69,8 @@ services:
     depends_on:
       retrieval-api:
         condition: service_healthy
+      gotenberg:
+        condition: service_started
 
   directory-watcher:
     build: .
@@ -72,6 +79,7 @@ services:
       APP_VAR_ROOT: ${APP_VAR_ROOT:-/app/var}
       APP_DB_PATH: ${APP_DB_PATH:-/app/var/app.db}
       APP_UPLOAD_ROOT: ${APP_UPLOAD_ROOT:-/app/var/uploads}
+      APP_CONVERTED_ROOT: ${APP_CONVERTED_ROOT:-/app/var/converted}
       PROJECTS_ROOT: /data/projects
       DIRECTORY_SCAN_INTERVAL_SECONDS: ${DIRECTORY_SCAN_INTERVAL_SECONDS:-5}
     volumes:
@@ -80,3 +88,8 @@ services:
     depends_on:
       retrieval-api:
         condition: service_healthy
+
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    ports:
+      - "${GOTENBERG_PORT:-43172}:3000"

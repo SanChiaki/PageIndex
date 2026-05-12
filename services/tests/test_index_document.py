@@ -228,6 +228,89 @@ def test_process_document_job_indexes_markdown_document_without_llm(tmp_path):
     assert run == ("completed", 0)
 
 
+def test_process_document_job_indexes_office_document_via_converted_pdf(tmp_path, monkeypatch):
+    db_path = _seed_single_document_job_db(tmp_path)
+    office_path = tmp_path / "scope.docx"
+    office_path.write_bytes(b"office body")
+    converted_pdf = tmp_path / "converted" / "doc_1.pdf"
+
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """
+        UPDATE documents
+           SET file_name = ?, storage_path = ?, mime_type = ?, media_type = ?
+         WHERE id = 'doc_1'
+        """,
+        (
+            "scope.docx",
+            str(office_path),
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "office",
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+    def fake_convert(file_path, document):
+        assert file_path == str(office_path)
+        assert document["document_id"] == "doc_1"
+        converted_pdf.parent.mkdir(parents=True, exist_ok=True)
+        converted_pdf.write_bytes(b"%PDF-1.7\nconverted")
+        return str(converted_pdf)
+
+    def fake_pdf_payload(file_path, document):
+        assert file_path == str(converted_pdf)
+        return {
+            "doc_name": "doc_1.pdf",
+            "doc_description": "Converted Office evidence",
+            "structure": [
+                {
+                    "title": "Scope",
+                    "node_id": "0001",
+                    "start_index": 2,
+                    "end_index": 2,
+                    "summary": "Acceptance evidence",
+                }
+            ],
+            "pages": [{"page": 2, "content": "Acceptance evidence"}],
+            "page_count": 2,
+            "evidence_kind": "pdf_text",
+            "visual_assets": [],
+            "source_metadata": {"converted": True},
+        }
+
+    monkeypatch.setattr(
+        "services.index_worker.index_document.convert_office_to_pdf",
+        fake_convert,
+    )
+    monkeypatch.setattr(
+        "services.index_worker.index_document._build_pdf_payload",
+        fake_pdf_payload,
+    )
+
+    process_document_job(str(db_path), "job_1")
+
+    conn = sqlite3.connect(db_path)
+    row = conn.execute(
+        """
+        SELECT di.doc_name, di.evidence_kind, di.source_metadata_json,
+               d.status, d.page_count
+          FROM document_indexes di
+          JOIN documents d ON d.id = di.document_id
+         WHERE di.document_id = 'doc_1'
+        """
+    ).fetchone()
+    conn.close()
+
+    metadata = json.loads(row[2])
+    assert row[0] == "doc_1.pdf"
+    assert row[1] == "office_pdf_text"
+    assert metadata["sourceFileName"] == "scope.docx"
+    assert metadata["sourceMediaType"] == "office"
+    assert metadata["evidencePdfPath"] == str(converted_pdf)
+    assert row[3:] == ("ready", 2)
+
+
 def test_process_document_job_skips_image_without_vision_model(tmp_path, monkeypatch):
     db_path = _seed_single_document_job_db(tmp_path)
     image_path = tmp_path / "site.png"
